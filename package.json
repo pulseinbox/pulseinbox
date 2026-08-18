@@ -1,0 +1,11 @@
+{
+  "name": "pulse",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Internal multi-channel sales messaging platform",
+  "type": "module",
+  "scripts": {},
+  "keywords": [],
+  "author": "",
+  "license": "UNLICENSED"
+}
