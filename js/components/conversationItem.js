@@ -14,6 +14,25 @@ function getChannelIcon(channel) {
   }
 }
 
+function getStatusLabel(status) {
+  switch (status) {
+    case "unread":
+      return "No leído";
+
+    case "active":
+      return "En conversación";
+
+    case "pending":
+      return "Pendiente";
+
+    case "closed":
+      return "Cerrado";
+
+    default:
+      return "Sin estado";
+  }
+}
+
 export function ConversationItem(
   conversation,
   onSelect
@@ -46,6 +65,9 @@ export function ConversationItem(
 
   const channelIcon =
     getChannelIcon(channel);
+
+  const statusLabel =
+    getStatusLabel(conversation.status);
 
   item.innerHTML = `
     <div
@@ -84,18 +106,24 @@ export function ConversationItem(
         </span>
 
         <span class="conversation-channel">
-
           <i class="${channelIcon}"></i>
-
         </span>
 
       </div>
 
       <div class="conversation-bottom">
 
-        <p class="conversation-preview">
-          ${lastMessage}
-        </p>
+        <div class="conversation-preview-wrapper">
+
+          <p class="conversation-preview">
+            ${lastMessage}
+          </p>
+
+          <span class="conversation-status">
+            ${statusLabel}
+          </span>
+
+        </div>
 
         ${
           conversation.unreadCount > 0
