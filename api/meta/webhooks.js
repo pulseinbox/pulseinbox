@@ -1,6 +1,9 @@
 export default async function handler(req, res) {
 
-  console.log("META WEBHOOK:", req.method);
+  console.log(
+    "META WEBHOOK:",
+    req.method
+  );
 
 
   /* =====================================================
@@ -10,21 +13,58 @@ export default async function handler(req, res) {
   if (req.method === "GET") {
 
     const mode =
-      req.query["hub.mode"];
+      req.query?.["hub.mode"];
 
     const token =
-      req.query["hub.verify_token"];
+      req.query?.["hub.verify_token"];
 
     const challenge =
-      req.query["hub.challenge"];
+      req.query?.["hub.challenge"];
 
     const verifyToken =
       process.env.META_VERIFY_TOKEN;
 
 
     console.log(
-      "META WEBHOOK: solicitud de verificación"
+      "META WEBHOOK DEBUG:",
+      {
+        mode,
+        tokenReceived:
+          Boolean(token),
+        challengeReceived:
+          Boolean(challenge),
+        envConfigured:
+          Boolean(verifyToken),
+
+        tokenLength:
+          token?.length ?? 0,
+
+        envLength:
+          verifyToken?.length ?? 0,
+
+        tokensMatch:
+          Boolean(
+            token &&
+            verifyToken &&
+            token === verifyToken
+          ),
+      }
     );
+
+
+    if (!verifyToken) {
+
+      console.error(
+        "META WEBHOOK: META_VERIFY_TOKEN no está configurado"
+      );
+
+      return res
+        .status(500)
+        .send(
+          "META_VERIFY_TOKEN_NOT_CONFIGURED"
+        );
+
+    }
 
 
     if (
@@ -44,7 +84,7 @@ export default async function handler(req, res) {
 
 
     console.warn(
-      "META WEBHOOK: token de verificación incorrecto"
+      "META WEBHOOK: token incorrecto"
     );
 
     return res
@@ -71,7 +111,6 @@ export default async function handler(req, res) {
         2
       )
     );
-
 
     return res
       .status(200)
