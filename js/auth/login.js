@@ -1,12 +1,15 @@
-import { employees } from "../mock-employees.js";
-import { login } from "./auth.js";
+import {
+  login,
+} from "./auth.js";
 
 
 export function Login({
   onLogin,
 }) {
+
   const loginView =
     document.createElement("main");
+
 
   loginView.className =
     "login";
@@ -87,20 +90,27 @@ export function Login({
   `;
 
 
+  /* =======================================================
+     ELEMENTS
+  ======================================================= */
+
   const form =
     loginView.querySelector(
       ".login-form"
     );
+
 
   const emailInput =
     loginView.querySelector(
       "#login-email"
     );
 
+
   const passwordInput =
     loginView.querySelector(
       "#login-password"
     );
+
 
   const error =
     loginView.querySelector(
@@ -108,9 +118,19 @@ export function Login({
     );
 
 
+  const submitButton =
+    loginView.querySelector(
+      ".login-submit"
+    );
+
+
+  /* =======================================================
+     SUBMIT
+  ======================================================= */
+
   form.addEventListener(
     "submit",
-    (event) => {
+    async (event) => {
 
       event.preventDefault();
 
@@ -120,58 +140,77 @@ export function Login({
           .trim()
           .toLowerCase();
 
+
       const password =
         passwordInput.value;
 
 
-      const employee =
-        employees.find(
-          (user) =>
-            user.email === email &&
-            user.password === password
+      error.textContent =
+        "";
+
+
+      submitButton.disabled =
+        true;
+
+
+      submitButton.textContent =
+        "Entrando...";
+
+
+      try {
+
+        const user =
+          await login(
+            email,
+            password
+          );
+
+
+        passwordInput.value =
+          "";
+
+
+        if (
+          typeof onLogin ===
+          "function"
+        ) {
+
+          onLogin(
+            user
+          );
+
+        }
+
+
+      } catch (errorObject) {
+
+        console.error(
+          errorObject
         );
 
 
-      if (!employee) {
-
         error.textContent =
-          "Correo o contraseña incorrectos.";
+          getLoginErrorMessage(
+            errorObject
+          );
 
-        passwordInput.value = "";
+
+        passwordInput.value =
+          "";
+
 
         passwordInput.focus();
 
-        return;
-      }
+
+      } finally {
+
+        submitButton.disabled =
+          false;
 
 
-      error.textContent = "";
+        submitButton.textContent =
+          "Entrar";
 
-
-      /*
-       * Guardamos únicamente la información
-       * necesaria para identificar la sesión.
-       *
-       * La contraseña NO se guarda.
-       */
-
-      const sessionUser = {
-        id: employee.id,
-        name: employee.name,
-        avatar: employee.avatar,
-        role: employee.role,
-        companies: employee.companies,
-      };
-
-
-      login(sessionUser);
-
-
-      if (
-        typeof onLogin ===
-        "function"
-      ) {
-        onLogin(sessionUser);
       }
 
     }
@@ -179,4 +218,71 @@ export function Login({
 
 
   return loginView;
+}
+
+
+/* =========================================================
+   FIREBASE LOGIN ERRORS
+========================================================= */
+
+function getLoginErrorMessage(
+  error
+) {
+
+  switch (
+    error?.code
+  ) {
+
+    case "auth/invalid-credential":
+
+    case "auth/invalid-login-credentials":
+
+    case "auth/wrong-password":
+
+    case "auth/user-not-found":
+
+      return (
+        "Correo o contraseña incorrectos."
+      );
+
+
+    case "auth/too-many-requests":
+
+      return (
+        "Demasiados intentos. Intenta nuevamente más tarde."
+      );
+
+
+    case "auth/user-disabled":
+
+      return (
+        "Esta cuenta está deshabilitada."
+      );
+
+
+    case "auth/invalid-email":
+
+      return (
+        "El correo electrónico no es válido."
+      );
+
+
+    default:
+
+      if (
+        error?.message ===
+        "USER_PROFILE_NOT_FOUND"
+      ) {
+
+        return (
+          "La cuenta no tiene un perfil de Pulse."
+        );
+
+      }
+
+
+      return (
+        "No se pudo iniciar sesión. Intenta nuevamente."
+      );
+  }
 }

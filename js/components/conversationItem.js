@@ -9,6 +9,9 @@ function getChannelIcon(channel) {
     case "tiktok":
       return "fa-brands fa-tiktok";
 
+    case "whatsapp":
+      return "fa-brands fa-whatsapp";
+
     default:
       return "fa-solid fa-comment";
   }
@@ -45,29 +48,69 @@ export function ConversationItem(
     item.classList.add("is-unread");
   }
 
+  // ==========================================
+  // CUSTOMER
+  // ==========================================
+
   const customerName =
-    conversation.customer.name;
+    conversation.customer?.name ||
+    "Cliente";
+
+  // ==========================================
+  // COMPANY
+  // ==========================================
 
   const companyName =
-    conversation.company.name;
+    conversation.company?.name ||
+    conversation.companyId ||
+    "Empresa";
 
   const companyColor =
-    conversation.company.color;
+    conversation.company?.color ||
+    "#888888";
+
+  // ==========================================
+  // CHANNEL
+  // ==========================================
+
+  // Firestore:
+  // channel: "instagram"
+  //
+  // NO:
+  // conversation.channel.type
 
   const channel =
-    conversation.channel.type;
-
-  const lastMessage =
-    conversation.lastMessage.text;
-
-  const timestamp =
-    conversation.lastMessage.timestamp;
+    typeof conversation.channel === "string"
+      ? conversation.channel
+      : conversation.channel?.type || "";
 
   const channelIcon =
     getChannelIcon(channel);
 
+  // ==========================================
+  // LAST MESSAGE
+  // ==========================================
+
+  const lastMessage =
+    conversation.lastMessage?.text ||
+    "Sin mensajes";
+
+  const timestamp =
+    conversation.lastMessage?.timestamp ||
+    "";
+
+  // ==========================================
+  // STATUS
+  // ==========================================
+
   const statusLabel =
-    getStatusLabel(conversation.status);
+    getStatusLabel(
+      conversation.status
+    );
+
+  // ==========================================
+  // RENDER
+  // ==========================================
 
   item.innerHTML = `
     <div
@@ -89,9 +132,15 @@ export function ConversationItem(
           ${customerName}
         </h3>
 
-        <time class="conversation-time">
-          ${timestamp}
-        </time>
+        ${
+          timestamp
+            ? `
+              <time class="conversation-time">
+                ${timestamp}
+              </time>
+            `
+            : ""
+        }
 
       </div>
 
@@ -140,9 +189,12 @@ export function ConversationItem(
     </div>
   `;
 
-  item.addEventListener("click", () => {
-    onSelect(conversation);
-  });
+  item.addEventListener(
+    "click",
+    () => {
+      onSelect(conversation);
+    }
+  );
 
   return item;
 }

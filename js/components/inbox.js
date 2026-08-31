@@ -1,44 +1,58 @@
-import { conversations } from "../mock-conversations.js";
-import { ConversationItem } from "./conversationItem.js";
-import { logout } from "../auth/auth.js";
-import { getCurrentUser } from "../auth/auth.js";
 import {
-  canAccessConversation,
-} from "../permissions.js";
+  ConversationItem,
+} from "./conversationItem.js";
+
+import {
+  logout,
+  getCurrentUser,
+} from "../auth/auth.js";
+
+import {
+  getConversations,
+  subscribeToConversations,
+  subscribeToIncomingMessages,
+} from "../services/conversationService.js";
 
 
 export function Inbox({
   onSelectConversation,
   onConversationChange,
 }) {
-  const inbox =
-    document.createElement("section");
 
-  inbox.className = "inbox";
+  const inbox =
+    document.createElement(
+      "section"
+    );
+
+
+  inbox.className =
+    "inbox";
 
 
   /* =======================================================
-     AUTHENTICATED USER
+     STATE
   ======================================================= */
 
   const currentUser =
     getCurrentUser();
 
 
-  /* =======================================================
-     ACCESSIBLE CONVERSATIONS
-  ======================================================= */
+  let conversations = [];
 
-  const accessibleConversations =
-    currentUser
-      ? conversations.filter(
-          (conversation) =>
-            canAccessConversation(
-              currentUser,
-              conversation
-            )
-        )
-      : [];
+  let currentFilter =
+    "all";
+
+  let searchTerm =
+    "";
+
+  let isLoading =
+    true;
+
+  let unsubscribeConversations =
+    null;
+
+  let unsubscribeIncomingMessages =
+    null;
 
 
   /* =======================================================
@@ -55,7 +69,7 @@ export function Inbox({
           <h2>Inbox</h2>
 
           <span class="inbox-count">
-            ${accessibleConversations.length}
+            0
           </span>
 
         </div>
@@ -67,11 +81,15 @@ export function Inbox({
           aria-label="Cerrar sesión"
           title="Cerrar sesión"
         >
-          <i class="fa-solid fa-right-from-bracket"></i>
+
+          <i
+            class="fa-solid fa-right-from-bracket"
+          ></i>
 
           <span>
             Cerrar sesión
           </span>
+
         </button>
 
       </div>
@@ -79,7 +97,9 @@ export function Inbox({
 
       <div class="inbox-search">
 
-        <i class="fa-solid fa-magnifying-glass"></i>
+        <i
+          class="fa-solid fa-magnifying-glass"
+        ></i>
 
         <input
           type="search"
@@ -132,7 +152,13 @@ export function Inbox({
     </header>
 
 
-    <div class="inbox-list"></div>
+    <div class="inbox-list">
+
+      <div class="placeholder">
+        Cargando conversaciones...
+      </div>
+
+    </div>
   `;
 
 
@@ -143,6 +169,12 @@ export function Inbox({
   const list =
     inbox.querySelector(
       ".inbox-list"
+    );
+
+
+  const count =
+    inbox.querySelector(
+      ".inbox-count"
     );
 
 
@@ -165,14 +197,292 @@ export function Inbox({
 
 
   /* =======================================================
-     STATE
+     MESSAGE SOUND
   ======================================================= */
 
-  let currentFilter =
-    "all";
+  const newMessageSound =
+    new Audio(
+      "/assets/new-message.wav"
+    );
 
-  let searchTerm =
-    "";
+
+  newMessageSound.preload =
+    "auto";
+
+
+  newMessageSound.volume =
+    0.45;
+
+
+  function playNewMessageSound() {
+
+    try {
+
+      newMessageSound.currentTime =
+        0;
+
+
+      const playPromise =
+        newMessageSound.play();
+
+
+      if (
+        playPromise &&
+        typeof playPromise.catch ===
+          "function"
+      ) {
+
+        playPromise.catch(
+          (error) => {
+
+            console.debug(
+              "INBOX: sonido bloqueado por el navegador:",
+              error
+            );
+
+          }
+        );
+
+      }
+
+    } catch (error) {
+
+      console.debug(
+        "INBOX: no se pudo reproducir el sonido:",
+        error
+      );
+
+    }
+
+  }
+
+
+  /* =======================================================
+     LOAD CONVERSATIONS
+  ======================================================= */
+
+  async function loadConversations() {
+
+    console.log(
+      "========================================"
+    );
+
+    console.log(
+      "INBOX: iniciando carga"
+    );
+
+    console.log(
+      "INBOX: usuario actual:",
+      currentUser
+    );
+
+
+    if (!currentUser) {
+
+      console.warn(
+        "INBOX: no existe usuario autenticado"
+      );
+
+      conversations = [];
+
+      isLoading =
+        false;
+
+      render();
+
+      return;
+
+    }
+
+
+    isLoading =
+      true;
+
+    render();
+
+
+    try {
+
+      console.log(
+        "INBOX: llamando getConversations()..."
+      );
+
+
+      conversations =
+        await getConversations(
+          currentUser
+        );
+
+
+      console.log(
+        "INBOX: conversaciones recibidas:",
+        conversations
+      );
+
+
+      console.log(
+        "INBOX: cantidad:",
+        conversations.length
+      );
+
+
+      isLoading =
+        false;
+
+      render();
+
+
+      /*
+       * Cancelamos cualquier listener anterior.
+       */
+
+      if (
+        typeof unsubscribeConversations ===
+        "function"
+      ) {
+
+        unsubscribeConversations();
+
+        unsubscribeConversations =
+          null;
+
+      }
+
+
+      /*
+       * Escuchamos cambios de conversaciones
+       * en tiempo real.
+       */
+
+      unsubscribeConversations =
+        await subscribeToConversations(
+          currentUser,
+
+          (updatedConversations) => {
+
+            /*
+             * Este listener solamente actualiza
+             * la información visual del Inbox.
+             *
+             * NO genera sonido.
+             *
+             * El sonido se decide exclusivamente
+             * desde subscribeToIncomingMessages(),
+             * que inspecciona mensajes nuevos y
+             * verifica sender === "customer".
+             */
+
+            conversations =
+              updatedConversations;
+
+
+            isLoading =
+              false;
+
+
+            render();
+
+          },
+
+          (error) => {
+
+            console.error(
+              "INBOX: error en tiempo real:",
+              error
+            );
+
+          }
+        );
+
+
+      /*
+       * Listener independiente para mensajes entrantes.
+       *
+       * Este es el ÚNICO lugar desde donde se reproduce
+       * el sonido de nueva entrada.
+       */
+
+      if (
+        typeof unsubscribeIncomingMessages ===
+        "function"
+      ) {
+
+        unsubscribeIncomingMessages();
+
+        unsubscribeIncomingMessages =
+          null;
+
+      }
+
+
+      unsubscribeIncomingMessages =
+        await subscribeToIncomingMessages(
+
+          currentUser,
+
+          (
+            message,
+            conversation
+          ) => {
+
+            console.log(
+              "INBOX: mensaje entrante:",
+              message,
+              conversation
+            );
+
+
+            playNewMessageSound();
+
+          },
+
+          (error) => {
+
+            console.error(
+              "INBOX: error en listener de mensajes entrantes:",
+              error
+            );
+
+          }
+
+        );
+
+
+    } catch (error) {
+
+      console.error(
+        "INBOX: error cargando conversaciones:",
+        error
+      );
+
+
+      conversations = [];
+
+      isLoading =
+        false;
+
+
+      list.innerHTML = `
+        <div class="placeholder">
+          No se pudieron cargar las conversaciones
+        </div>
+      `;
+
+
+      return;
+
+    }
+
+
+    console.log(
+      "INBOX: render finalizado"
+    );
+
+    console.log(
+      "========================================"
+    );
+
+  }
 
 
   /* =======================================================
@@ -180,32 +490,63 @@ export function Inbox({
   ======================================================= */
 
   function render() {
-    list.innerHTML = "";
 
+    count.textContent =
+      conversations.length;
+
+
+    list.innerHTML =
+      "";
+
+
+    /* =====================================================
+       LOADING
+    ===================================================== */
+
+    if (isLoading) {
+
+      list.innerHTML = `
+        <div class="placeholder">
+          Cargando conversaciones...
+        </div>
+      `;
+
+      return;
+
+    }
+
+
+    /* =====================================================
+       FILTER
+    ===================================================== */
 
     const filteredConversations =
-      accessibleConversations.filter(
+      conversations.filter(
         (conversation) => {
 
           const matchesFilter =
-            currentFilter === "all" ||
+            currentFilter ===
+              "all" ||
             conversation.status ===
               currentFilter;
 
 
           const customerName =
-            conversation.customer.name
-              .toLowerCase();
+            conversation.customer?.name
+              ?.toLowerCase() ??
+            "";
 
 
           const companyName =
-            conversation.company.name
-              .toLowerCase();
+            conversation.company?.name
+              ?.toLowerCase() ??
+            "";
 
 
           const message =
-            conversation.lastMessage.text
-              .toLowerCase();
+            conversation.lastMessage?.text
+              ?.toLowerCase() ??
+            "";
 
 
           const matchesSearch =
@@ -225,8 +566,15 @@ export function Inbox({
             matchesFilter &&
             matchesSearch
           );
+
         }
       );
+
+
+    console.log(
+      "INBOX: conversaciones filtradas:",
+      filteredConversations
+    );
 
 
     /* =====================================================
@@ -237,6 +585,7 @@ export function Inbox({
       filteredConversations.length ===
       0
     ) {
+
       list.innerHTML = `
         <div class="placeholder">
           No hay conversaciones
@@ -244,6 +593,7 @@ export function Inbox({
       `;
 
       return;
+
     }
 
 
@@ -254,15 +604,33 @@ export function Inbox({
     filteredConversations.forEach(
       (conversation) => {
 
-        list.appendChild(
-          ConversationItem(
-            conversation,
-            onSelectConversation
-          )
-        );
+        try {
+
+          const item =
+            ConversationItem(
+              conversation,
+              onSelectConversation
+            );
+
+
+          list.appendChild(
+            item
+          );
+
+
+        } catch (error) {
+
+          console.error(
+            "INBOX: error creando ConversationItem:",
+            error,
+            conversation
+          );
+
+        }
 
       }
     );
+
   }
 
 
@@ -281,6 +649,7 @@ export function Inbox({
 
 
       render();
+
     }
   );
 
@@ -305,7 +674,8 @@ export function Inbox({
 
               filterButton.classList.toggle(
                 "is-active",
-                filterButton === button
+                filterButton ===
+                  button
               );
 
             }
@@ -313,6 +683,7 @@ export function Inbox({
 
 
           render();
+
         }
       );
 
@@ -326,11 +697,22 @@ export function Inbox({
 
   logoutButton.addEventListener(
     "click",
-    () => {
+    async () => {
 
-      logout();
+      try {
 
-      window.location.reload();
+        await logout();
+
+        window.location.reload();
+
+      } catch (error) {
+
+        console.error(
+          "Error cerrando sesión:",
+          error
+        );
+
+      }
 
     }
   );
@@ -343,17 +725,21 @@ export function Inbox({
   function handleConversationChange(
     conversation
   ) {
+
     if (
       typeof onConversationChange ===
       "function"
     ) {
+
       onConversationChange(
         conversation
       );
+
     }
 
 
-    render();
+    loadConversations();
+
   }
 
 
@@ -362,18 +748,56 @@ export function Inbox({
   ======================================================= */
 
   inbox.refresh =
-    render;
+    loadConversations;
+
 
   inbox.handleConversationChange =
     handleConversationChange;
 
 
+  /*
+   * Permite cerrar el listener cuando
+   * el Inbox deja de utilizarse.
+   */
+
+  inbox.destroy =
+    () => {
+
+      if (
+        typeof unsubscribeConversations ===
+        "function"
+      ) {
+
+        unsubscribeConversations();
+
+        unsubscribeConversations =
+          null;
+
+      }
+
+
+      if (
+        typeof unsubscribeIncomingMessages ===
+        "function"
+      ) {
+
+        unsubscribeIncomingMessages();
+
+        unsubscribeIncomingMessages =
+          null;
+
+      }
+
+    };
+
+
   /* =======================================================
-     INITIAL RENDER
+     INITIAL LOAD
   ======================================================= */
 
-  render();
+  loadConversations();
 
 
   return inbox;
+
 }

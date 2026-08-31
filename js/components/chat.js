@@ -1,6 +1,4 @@
-import { messages } from "../mock-messages.js";
-import { employees } from "../mock-employees.js";
-import {
+ import {
   getCurrentUser,
 } from "../auth/auth.js";
 
@@ -15,7 +13,10 @@ import {
   assignConversation,
   unassignConversation,
   changeConversationStatus,
+  getMessages,
+  subscribeToMessages,
   addMessage,
+  getEmployeesForCompany,
 } from "../services/conversationService.js";
 
 
@@ -125,11 +126,44 @@ function getStatusLabel(status) {
 }
 
 
-function getEmployee(employeeId) {
-  return employees.find(
-    (employee) =>
-      employee.id === employeeId
+function getEmployee(
+  employeeId,
+  employees = [],
+  currentUser = null
+) {
+
+  if (!employeeId) {
+    return null;
+  }
+
+
+  /*
+   * Firebase UID is the canonical assignment
+   * identifier. Resolve the authenticated user
+   * first, then the Firestore employee list.
+   */
+
+  if (
+    currentUser &&
+    (
+      currentUser.uid === employeeId ||
+      currentUser.id === employeeId
+    )
+  ) {
+
+    return currentUser;
+
+  }
+
+
+  return (
+    employees.find(
+      (employee) =>
+        employee.id === employeeId ||
+        employee.uid === employeeId
+    ) ?? null
   );
+
 }
 
 
@@ -205,12 +239,13 @@ function createEmployeeOptionMarkup(
   currentEmployeeId
 ) {
   const isCurrent =
-    employee.id === currentEmployeeId;
+    employee.id === currentEmployeeId ||
+    employee.uid === currentEmployeeId;
 
   return `
     <button
       type="button"
-      data-employee="${employee.id}"
+      data-employee="${employee.uid ?? employee.id}"
       class="${
         isCurrent
           ? "is-current"
@@ -248,37 +283,25 @@ function createEmployeeOptionMarkup(
 ========================================================= */
 
 function getAvailableAssignees(
-  user,
+  employees,
   companyId
 ) {
-  if (!user || !companyId) {
-    return [];
-  }
 
   if (
-    !canAccessCompany(
-      user,
-      companyId
-    )
-  ) {
-    return [];
-  }
-
-  if (
-    !can(
-      user,
-      PERMISSIONS.ASSIGN_CONVERSATIONS
-    )
+    !companyId ||
+    !Array.isArray(employees)
   ) {
     return [];
   }
 
   return employees.filter(
     (employee) =>
+      employee.active !== false &&
       employee.companies?.includes(
         companyId
       )
   );
+
 }
 
 
@@ -350,7 +373,11 @@ export function Chat(
     conversation.company.id;
 
   const channel =
-    conversation.channel.type;
+    typeof conversation.channel === "string"
+      ? conversation.channel
+      : conversation.channel?.type ??
+        conversation.channelType ??
+        "social";
 
 
   /* =======================================================
@@ -386,39 +413,249 @@ export function Chat(
      ASSIGNMENT STATE
   ======================================================= */
 
-  const assignedEmployee =
+  let availableEmployees = [];
+
+  let assignedEmployee =
     getEmployee(
-      conversation.assignedTo
+      conversation.assignedTo,
+      availableEmployees,
+      currentUser
     );
 
   const isAssignedToCurrentUser =
     Boolean(
       conversation.assignedTo &&
-      currentUser?.id ===
-        conversation.assignedTo
+      (
+        currentUser?.id ===
+          conversation.assignedTo ||
+        currentUser?.uid ===
+          conversation.assignedTo
+      )
     );
 
   const isUnassigned =
     !conversation.assignedTo;
 
 
-  const availableAssignees =
+  let availableAssignees =
     getAvailableAssignees(
-      currentUser,
+      availableEmployees,
       companyId
     );
+
+  console.log(
+    "CHAT: permisos de conversación",
+    {
+      conversationId: conversation.id,
+      companyId,
+      userId: currentUser?.id,
+      userUid: currentUser?.uid,
+      role: currentUser?.role,
+      companies: currentUser?.companies,
+      assignedTo: conversation.assignedTo,
+      canTake: canTakeConversation,
+      canAssign: canAssignConversation,
+      canChangeStatus,
+      canReply,
+      companyAccess:
+        canAccessCompany(
+          currentUser,
+          companyId
+        ),
+      availableAssignees:
+        availableAssignees.map(
+          (employee) => ({
+            id: employee.id,
+            uid: employee.uid,
+            name: employee.name,
+          })
+        ),
+    }
+  );
 
 
   /* =======================================================
      MESSAGES
   ======================================================= */
 
-  if (!messages[conversation.id]) {
-    messages[conversation.id] = [];
-  }
+  let conversationMessages = [];
 
-  const conversationMessages =
-    messages[conversation.id];
+  let messagesLoaded = false;
+
+  let unsubscribeMessages = null;
+
+
+
+  async function loadMessages() {
+
+    try {
+
+      messagesLoaded = false;
+
+
+      if (messageList) {
+
+        messageList.innerHTML = `
+          <div class="placeholder">
+            Cargando mensajes...
+          </div>
+        `;
+
+      }
+
+
+      console.log(
+        "CHAT: iniciando escucha en tiempo real:",
+        conversation.id
+      );
+
+
+      /*
+       * Cancelamos cualquier listener anterior.
+       *
+       * Esto es importante cuando el Chat
+       * cambia de conversación.
+       */
+
+      if (
+        typeof unsubscribeMessages ===
+        "function"
+      ) {
+
+        unsubscribeMessages();
+
+        unsubscribeMessages =
+          null;
+
+      }
+
+
+      /*
+       * Firestore real-time listener.
+       */
+
+      unsubscribeMessages =
+        await subscribeToMessages(
+          conversation.id,
+          currentUser,
+
+          (messages) => {
+
+            conversationMessages =
+              messages;
+
+
+            messagesLoaded =
+              true;
+
+
+            console.log(
+              "CHAT: mensajes recibidos en tiempo real:",
+              conversationMessages
+            );
+
+
+            if (!messageList) {
+              return;
+            }
+
+
+            if (
+              conversationMessages.length ===
+              0
+            ) {
+
+              messageList.innerHTML = `
+                <div class="placeholder">
+                  No hay mensajes en esta conversación
+                </div>
+              `;
+
+              return;
+
+            }
+
+
+            messageList.innerHTML =
+              conversationMessages
+                .map(
+                  createMessageMarkup
+                )
+                .join("");
+
+
+            /*
+             * Bajamos al último mensaje.
+             */
+
+            requestAnimationFrame(
+              () => {
+
+                if (
+                  messagesContainer
+                ) {
+
+                  messagesContainer.scrollTop =
+                    messagesContainer.scrollHeight;
+
+                }
+
+              }
+            );
+
+          },
+
+          (error) => {
+
+            console.error(
+              "CHAT: error en tiempo real:",
+              error
+            );
+
+
+            messagesLoaded =
+              false;
+
+
+            if (messageList) {
+
+              messageList.innerHTML = `
+                <div class="placeholder">
+                  No se pudieron cargar los mensajes
+                </div>
+              `;
+
+            }
+
+          }
+        );
+
+
+    } catch (error) {
+
+      console.error(
+        "CHAT: error iniciando mensajes en tiempo real:",
+        error
+      );
+
+
+      messagesLoaded =
+        false;
+
+
+      if (messageList) {
+
+        messageList.innerHTML = `
+          <div class="placeholder">
+            No se pudieron cargar los mensajes
+          </div>
+        `;
+
+      }
+
+    }
+
+  }
 
 
   /* =======================================================
@@ -508,17 +745,19 @@ export function Chat(
           </button>
 
 
-          ${
-            availableAssignees
-              .map(
-                (employee) =>
-                  createEmployeeOptionMarkup(
-                    employee,
-                    conversation.assignedTo
-                  )
-              )
-              .join("")
-          }
+          <div class="chat-assignee-options">
+            ${
+              availableAssignees
+                .map(
+                  (employee) =>
+                    createEmployeeOptionMarkup(
+                      employee,
+                      conversation.assignedTo
+                    )
+                )
+                .join("")
+            }
+          </div>
 
         </div>
 
@@ -748,9 +987,9 @@ export function Chat(
 
       <div class="chat-message-list">
 
-        ${conversationMessages
-          .map(createMessageMarkup)
-          .join("")}
+        <div class="placeholder">
+          Cargando mensajes...
+        </div>
 
       </div>
 
@@ -971,6 +1210,170 @@ export function Chat(
 
 
   /* =======================================================
+     CONVERSATION UI REFRESH
+  ======================================================= */
+
+  function updateConversationUI(
+    updatedConversation
+  ) {
+
+    if (!updatedConversation) {
+      return;
+    }
+
+    /*
+     * Keep the same conversation object as the
+     * single source used by this Chat instance.
+     */
+
+    Object.assign(
+      conversation,
+      updatedConversation
+    );
+
+
+    assignedEmployee =
+      getEmployee(
+        conversation.assignedTo,
+        availableEmployees,
+        currentUser
+      );
+
+    /*
+     * Assignee
+     */
+
+    const currentAssignedEmployee =
+      getEmployee(
+        conversation.assignedTo,
+        availableEmployees,
+        currentUser
+      );
+
+    if (assigneeButton) {
+
+      const avatar =
+        assigneeButton.querySelector(
+          ".chat-assignee-avatar"
+        );
+
+      const label =
+        assigneeButton.querySelector(
+          ".chat-assignee-label"
+        );
+
+      if (avatar) {
+
+        avatar.innerHTML =
+          currentAssignedEmployee
+            ? escapeHtml(
+                currentAssignedEmployee.name
+                  .charAt(0)
+                  .toUpperCase()
+              )
+            : `<i class="fa-solid fa-user"></i>`;
+
+      }
+
+      if (label) {
+
+        label.textContent =
+          currentAssignedEmployee
+            ? currentAssignedEmployee.name
+            : conversation.assignedTo
+              ? "Asignado"
+              : "Sin asignar";
+
+      }
+
+    }
+
+    /*
+     * Take button / readonly state.
+     *
+     * Manager/Admin use the assignment menu,
+     * while an agent sees the "Tomar" action only
+     * when the conversation is unassigned.
+     */
+
+    if (
+      !canAssignConversation &&
+      assigneeButton
+    ) {
+
+      const buttonLabel =
+        assigneeButton.querySelector(
+          ".chat-assignee-label"
+        );
+
+      const buttonAvatar =
+        assigneeButton.querySelector(
+          ".chat-assignee-avatar"
+        );
+
+      const assigned =
+        Boolean(
+          conversation.assignedTo
+        );
+
+      if (assigned) {
+
+        assigneeButton.classList.remove(
+          "chat-take-button"
+        );
+
+        assigneeButton.classList.add(
+          "is-readonly"
+        );
+
+        if (buttonLabel) {
+          buttonLabel.textContent =
+            currentAssignedEmployee
+              ? currentAssignedEmployee.name
+              : conversation.assignedTo
+                ? "Asignado"
+                : "Sin asignar";
+        }
+
+        if (buttonAvatar) {
+          buttonAvatar.innerHTML =
+            currentAssignedEmployee
+              ? escapeHtml(
+                  currentAssignedEmployee.name
+                    .charAt(0)
+                    .toUpperCase()
+                )
+              : `<i class="fa-solid fa-user"></i>`;
+        }
+
+      } else {
+
+        assigneeButton.classList.add(
+          "chat-take-button"
+        );
+
+        assigneeButton.classList.remove(
+          "is-readonly"
+        );
+
+        if (buttonLabel) {
+          buttonLabel.textContent =
+            "Tomar conversación";
+        }
+
+        if (buttonAvatar) {
+          buttonAvatar.innerHTML =
+            `<i class="fa-solid fa-hand-pointer"></i>`;
+        }
+
+      }
+
+    }
+
+  }
+
+
+  /* =======================================================
      STATUS UI
   ======================================================= */
 
@@ -994,13 +1397,29 @@ export function Chat(
      ASSIGNMENT
   ======================================================= */
 
-  if (assigneeButton) {
+  /*
+   * IMPORTANT:
+   *
+   * Admin / Manager:
+   *   - They have the assignment dropdown.
+   *
+   * Agent:
+   *   - They only have "Tomar conversación" when
+   *     the conversation is unassigned.
+   *
+   * Never access assigneeMenu unless it actually exists.
+   */
+
+  if (canAssignConversation) {
 
     /*
-     * Manager / Admin
+     * ADMIN / MANAGER — OPEN/CLOSE MENU
      */
 
-    if (canAssignConversation) {
+    if (
+      assigneeButton &&
+      assigneeMenu
+    ) {
 
       assigneeButton.addEventListener(
         "click",
@@ -1011,10 +1430,12 @@ export function Chat(
               "is-visible"
             );
 
+
           assigneeMenu.classList.toggle(
             "is-visible",
             !isOpen
           );
+
 
           assigneeButton.setAttribute(
             "aria-expanded",
@@ -1024,51 +1445,51 @@ export function Chat(
         }
       );
 
+    }
 
-      const assigneeOptions =
-        assigneeMenu.querySelectorAll(
-          "[data-employee]"
+
+    /*
+     * UNASSIGN
+     */
+
+    if (assigneeMenu) {
+
+      const unassignedOption =
+        assigneeMenu.querySelector(
+          '[data-employee="unassigned"]'
         );
 
 
-      assigneeOptions.forEach(
-        (option) => {
+      if (unassignedOption) {
 
-          option.addEventListener(
-            "click",
-            () => {
+        unassignedOption.addEventListener(
+          "click",
+          async () => {
 
-              const employeeId =
-                option.dataset.employee;
-
-
-              if (
-                employeeId !== "unassigned" &&
-                !availableAssignees.some(
-                  (employee) =>
-                    employee.id === employeeId
-                )
-              ) {
-                return;
-              }
-
+            try {
 
               const result =
-                employeeId === "unassigned"
-                  ? unassignConversation(
-                      conversation,
-                      currentUser
-                    )
-                  : assignConversation(
-                      conversation,
-                      employeeId,
-                      currentUser
-                    );
+                await unassignConversation(
+                  conversation,
+                  currentUser
+                );
 
 
-              if (!result.success) {
+              if (!result?.success) {
+
+                console.error(
+                  "CHAT: no se pudo liberar la conversación:",
+                  result?.reason
+                );
+
                 return;
+
               }
+
+
+              updateConversationUI(
+                result.conversation
+              );
 
 
               assigneeMenu.classList.remove(
@@ -1076,68 +1497,147 @@ export function Chat(
               );
 
 
-              assigneeButton.setAttribute(
-                "aria-expanded",
-                "false"
-              );
+              if (assigneeButton) {
+
+                assigneeButton.setAttribute(
+                  "aria-expanded",
+                  "false"
+                );
+
+              }
 
 
               if (
                 typeof onConversationChange ===
                 "function"
               ) {
+
                 onConversationChange(
-                  conversation
+                  result.conversation
                 );
+
               }
 
-            }
-          );
+            } catch (error) {
 
-        }
-      );
+              console.error(
+                "CHAT: error liberando conversación:",
+                error
+              );
+
+            }
+
+          }
+        );
+
+      }
 
     }
 
+  }
 
-    /*
-     * Agent
-     */
 
-    else if (
-      canTakeConversation &&
-      isUnassigned
-    ) {
+  /*
+   * AGENT — TAKE CONVERSATION
+   *
+   * This is intentionally a separate branch.
+   * It must NOT depend on assigneeMenu.
+   */
 
-      assigneeButton.addEventListener(
-        "click",
-        () => {
+  else if (
+    canTakeConversation &&
+    isUnassigned &&
+    assigneeButton
+  ) {
+
+    assigneeButton.addEventListener(
+      "click",
+      async () => {
+
+        try {
 
           const result =
-            takeConversation(
+            await takeConversation(
               conversation,
               currentUser
             );
 
 
-          if (!result.success) {
+          if (!result?.success) {
+
+            console.error(
+              "CHAT: no se pudo tomar la conversación:",
+              result?.reason
+            );
+
             return;
+
           }
+
+
+          console.log(
+            "CHAT: conversación tomada correctamente:",
+            {
+              conversationId:
+                conversation.id,
+
+              assignedTo:
+                result.conversation?.assignedTo,
+
+              currentUserId:
+                currentUser?.id,
+
+              currentUserUid:
+                currentUser?.uid,
+            }
+          );
+
+
+          const assignedConversation = {
+
+            ...conversation,
+
+            ...result.conversation,
+
+            assignedTo:
+              result.conversation?.assignedTo ??
+              currentUser?.uid ??
+              currentUser?.id,
+
+            status:
+              result.conversation?.status ??
+              "active",
+
+          };
+
+
+          updateConversationUI(
+            assignedConversation
+          );
 
 
           if (
             typeof onConversationChange ===
             "function"
           ) {
+
             onConversationChange(
-              conversation
+              assignedConversation
             );
+
           }
 
-        }
-      );
+        } catch (error) {
 
-    }
+          console.error(
+            "CHAT: error tomando la conversación:",
+            error
+          );
+
+        }
+
+      }
+    );
 
   }
 
@@ -1181,28 +1681,54 @@ export function Chat(
 
         option.addEventListener(
           "click",
-          () => {
+          async () => {
 
             const newStatus =
               option.dataset.status;
 
 
-            const result =
-              changeConversationStatus(
+            try {
+
+              const result =
+                await changeConversationStatus(
+                  conversation,
+                  newStatus,
+                  currentUser
+                );
+
+
+              if (!result?.success) {
+
+                console.error(
+                  "CHAT: no se pudo cambiar el estado:",
+                  result?.reason
+                );
+
+                return;
+              }
+
+
+              Object.assign(
                 conversation,
-                newStatus,
-                currentUser
+                result.conversation
               );
 
 
-            if (!result.success) {
+              updateStatusUI(
+                result.conversation.status
+              );
+
+
+            } catch (error) {
+
+              console.error(
+                "CHAT: error cambiando estado:",
+                error
+              );
+
               return;
+
             }
-
-
-            updateStatusUI(
-              result.conversation.status
-            );
 
 
             statusMenu.classList.remove(
@@ -1235,17 +1761,234 @@ export function Chat(
 
 
   /* =======================================================
-     INITIAL SCROLL
+     LOAD FIRESTORE EMPLOYEES
   ======================================================= */
 
-  requestAnimationFrame(
-    () => {
+  async function loadAvailableEmployees() {
 
-      messagesContainer.scrollTop =
-        messagesContainer.scrollHeight;
+    if (
+      !canAssignConversation
+    ) {
+      return;
+    }
+
+
+    try {
+
+      availableEmployees =
+        await getEmployeesForCompany(
+          currentUser,
+          companyId
+        );
+
+
+      availableAssignees =
+        getAvailableAssignees(
+          availableEmployees,
+          companyId
+        );
+
+
+      assignedEmployee =
+        getEmployee(
+          conversation.assignedTo,
+          availableEmployees,
+          currentUser
+        );
+
+
+      console.log(
+        "CHAT: empleados reales de Firestore:",
+        availableAssignees.map(
+          (employee) => ({
+            id: employee.id,
+            uid: employee.uid,
+            name: employee.name,
+          })
+        )
+      );
+
+
+      /*
+       * Update the current assignee display.
+       */
+
+      updateConversationUI(
+        conversation
+      );
+
+
+      /*
+       * Populate the Admin/Manager menu with
+       * real Firestore employees.
+       */
+
+      renderAssigneeOptions();
+
+    } catch (error) {
+
+      console.error(
+        "CHAT: error cargando empleados de Firestore:",
+        error
+      );
 
     }
-  );
+
+  }
+
+
+  /* =======================================================
+     RENDER ASSIGNEE OPTIONS
+  ======================================================= */
+
+  function renderAssigneeOptions() {
+
+    if (!canAssignConversation) {
+      return;
+    }
+
+
+    if (!assigneeMenu) {
+      return;
+    }
+
+
+    const optionsContainer =
+      assigneeMenu.querySelector(
+        ".chat-assignee-options"
+      );
+
+
+    if (!optionsContainer) {
+      return;
+    }
+
+
+    optionsContainer.innerHTML =
+      availableAssignees
+        .map(
+          (employee) =>
+            createEmployeeOptionMarkup(
+              employee,
+              conversation.assignedTo
+            )
+        )
+        .join("");
+
+
+    const employeeOptions =
+      optionsContainer.querySelectorAll(
+        "[data-employee]"
+      );
+
+
+    employeeOptions.forEach(
+      (option) => {
+
+        option.addEventListener(
+          "click",
+          async () => {
+
+            const employeeId =
+              option.dataset.employee;
+
+
+            const employee =
+              availableAssignees.find(
+                (item) =>
+                  item.id === employeeId ||
+                  item.uid === employeeId
+              );
+
+
+            if (!employee) {
+
+              console.error(
+                "CHAT: empleado de Firestore no encontrado:",
+                employeeId
+              );
+
+              return;
+
+            }
+
+
+            try {
+
+              const result =
+                await assignConversation(
+                  conversation,
+                  employee,
+                  currentUser
+                );
+
+
+              if (!result?.success) {
+
+                console.error(
+                  "CHAT: no se pudo asignar la conversación:",
+                  result?.reason
+                );
+
+                return;
+
+              }
+
+
+              updateConversationUI(
+                result.conversation
+              );
+
+
+              assigneeMenu.classList.remove(
+                "is-visible"
+              );
+
+
+              if (assigneeButton) {
+
+                assigneeButton.setAttribute(
+                  "aria-expanded",
+                  "false"
+                );
+
+              }
+
+
+              if (
+                typeof onConversationChange ===
+                "function"
+              ) {
+
+                onConversationChange(
+                  result.conversation
+                );
+
+              }
+
+            } catch (error) {
+
+              console.error(
+                "CHAT: error asignando conversación:",
+                error
+              );
+
+            }
+
+          }
+        );
+
+      }
+    );
+
+  }
+
+
+  /* =======================================================
+     LOAD FIRESTORE MESSAGES
+  ======================================================= */
+
+  loadMessages();
 
 
   /* =======================================================
@@ -1364,7 +2107,7 @@ export function Chat(
 
   composer.addEventListener(
     "submit",
-    (event) => {
+    async (event) => {
 
       event.preventDefault();
 
@@ -1383,74 +2126,139 @@ export function Chat(
       }
 
 
-      const result =
-        addMessage(
-          conversation,
-          text,
-          "employee",
-          currentUser
+      try {
+
+        input.disabled = true;
+
+        const result =
+          await addMessage(
+            conversation,
+            text,
+            "employee",
+            currentUser
+          );
+
+
+        if (!result.success) {
+          console.error(
+            "No se pudo enviar el mensaje:",
+            result.reason
+          );
+
+          return;
+        }
+
+
+        /*
+         * No agregamos manualmente el mensaje
+         * al DOM. Firestore + onSnapshot()
+         * será la única fuente de verdad.
+         *
+         * Esto evita duplicados cuando Firestore
+         * devuelve el mensaje recién creado.
+         */
+
+        input.value = "";
+
+
+        updateStatusUI(
+          result.conversation.status
         );
 
 
-      if (!result.success) {
-        return;
-      }
+        if (
+          typeof onConversationChange ===
+          "function"
+        ) {
 
-
-      const message =
-        result.message;
-
-
-      conversationMessages.push(
-        message
-      );
-
-
-      messageList.insertAdjacentHTML(
-        "beforeend",
-        createMessageMarkup(
-          message
-        )
-      );
-
-
-      input.value = "";
-
-
-      updateStatusUI(
-        result.conversation.status
-      );
-
-
-      if (
-        typeof onConversationChange ===
-        "function"
-      ) {
-        onConversationChange(
-          conversation
-        );
-      }
-
-
-      requestAnimationFrame(
-        () => {
-
-          messagesContainer.scrollTo({
-            top:
-              messagesContainer.scrollHeight,
-
-            behavior:
-              "smooth",
-          });
+          onConversationChange(
+            result.conversation
+          );
 
         }
-      );
 
 
-      input.focus();
+        requestAnimationFrame(
+          () => {
+
+            messagesContainer.scrollTo({
+              top:
+                messagesContainer.scrollHeight,
+
+              behavior:
+                "smooth",
+
+            });
+
+          }
+        );
+
+
+      } catch (error) {
+
+        console.error(
+          "Error enviando mensaje:",
+          error
+        );
+
+      } finally {
+
+        input.disabled =
+          !canReply;
+
+        input.focus();
+
+      }
 
     }
   );
+
+
+  /*
+   * Refresh only the conversation metadata/UI.
+   *
+   * This avoids destroying and recreating the Chat
+   * (and therefore avoids creating duplicate
+   * Firestore message listeners).
+   */
+
+  chat.refreshConversation =
+    updateConversationUI;
+
+
+  chat.refreshMessages =
+    loadMessages;
+
+
+  /*
+   * Permite al componente padre
+   * cerrar el listener cuando
+   * el Chat deja de utilizarse.
+   */
+
+  chat.destroy =
+    () => {
+
+      if (
+        typeof unsubscribeMessages ===
+        "function"
+      ) {
+
+        unsubscribeMessages();
+
+        unsubscribeMessages =
+          null;
+
+      }
+
+    };
+
+
+  /*
+   * Load real employees only after the Chat DOM,
+   * including the assignment menu, has been created.
+   */
+  loadAvailableEmployees();
 
 
   return chat;

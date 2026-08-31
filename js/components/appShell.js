@@ -45,6 +45,9 @@ export function AppShell() {
   let inbox =
     null;
 
+  let chat =
+    null;
+
 
   /* =======================================================
      RENDER CHAT
@@ -59,6 +62,47 @@ export function AppShell() {
     }
 
 
+    /*
+     * If the same conversation is already open,
+     * update its metadata instead of destroying
+     * the Chat and its real-time message listener.
+     */
+
+    if (
+      chat &&
+      selectedConversation?.id ===
+        conversation.id &&
+      typeof chat.refreshConversation ===
+        "function"
+    ) {
+
+      selectedConversation =
+        conversation;
+
+      chat.refreshConversation(
+        conversation
+      );
+
+      return;
+    }
+
+
+    /*
+     * A different conversation is being opened.
+     * Close the previous message listener first.
+     */
+
+    if (
+      chat &&
+      typeof chat.destroy ===
+        "function"
+    ) {
+
+      chat.destroy();
+
+    }
+
+
     selectedConversation =
       conversation;
 
@@ -67,15 +111,20 @@ export function AppShell() {
       "";
 
 
-    chatContainer.appendChild(
+    chat =
       Chat(
         conversation,
         {
           onConversationChange:
             handleConversationChange,
         }
-      )
+      );
+
+
+    chatContainer.appendChild(
+      chat
     );
+
   }
 
 
@@ -93,8 +142,8 @@ export function AppShell() {
 
 
     /*
-     * Mantener la conversación
-     * seleccionada actualizada.
+     * The conversation returned by Firestore
+     * becomes the selected conversation.
      */
 
     if (
@@ -109,14 +158,24 @@ export function AppShell() {
 
 
     /*
-     * Actualizar Inbox.
+     * IMPORTANT:
      *
-     * Esto permite actualizar:
+     * Do NOT call inbox.handleConversationChange()
+     * from here.
      *
-     * - estado
-     * - contador
-     * - preview
-     * - orden visual
+     * That method calls AppShell's
+     * onConversationChange callback, which would
+     * create this cycle:
+     *
+     * AppShell
+     *   -> Inbox.handleConversationChange()
+     *   -> AppShell.handleConversationChange()
+     *   -> Inbox.handleConversationChange()
+     *   -> ...
+     *
+     * Instead, AppShell updates its own selected
+     * conversation and simply asks the Inbox to
+     * refresh its data.
      */
 
     if (
@@ -131,27 +190,19 @@ export function AppShell() {
 
 
     /*
-     * Volver a renderizar el Chat.
-     *
-     * Esto es importante para que
-     * cualquier cambio realizado
-     * dentro de Chat se refleje
-     * inmediatamente.
-     *
-     * Ejemplos:
-     *
-     * - asignación
-     * - tomar conversación
-     * - cambio de estado
-     * - nuevo mensaje
+     * Update only the Chat metadata/UI.
+     * The message listener remains alive.
      */
 
     if (
+      chat &&
       selectedConversation?.id ===
-      conversation.id
+        conversation.id &&
+      typeof chat.refreshConversation ===
+        "function"
     ) {
 
-      renderChat(
+      chat.refreshConversation(
         selectedConversation
       );
 
@@ -168,6 +219,9 @@ export function AppShell() {
     Inbox({
       onSelectConversation:
         renderChat,
+
+      onConversationChange:
+        handleConversationChange,
     });
 
 
