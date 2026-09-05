@@ -2174,20 +2174,21 @@ export function Chat(
         input.value = "";
 
 
-        updateStatusUI(
-          result.conversation.status
-        );
-
-
-        if (
-          typeof onConversationChange ===
-          "function"
-        ) {
-
-          onConversationChange(
-            result.conversation
+        if (result.conversation) {
+          updateStatusUI(
+            result.conversation.status
           );
 
+          if (
+            typeof onConversationChange ===
+            "function"
+          ) {
+            onConversationChange(
+              result.conversation
+            );
+          }
+        } else if (channel === "facebook") {
+          updateStatusUI("active");
         }
 
 
