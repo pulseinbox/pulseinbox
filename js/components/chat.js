@@ -13,11 +13,14 @@ import {
   assignConversation,
   unassignConversation,
   changeConversationStatus,
-  getMessages,
   subscribeToMessages,
-  addMessage,
   getEmployeesForCompany,
+  addMessage,
 } from "../services/conversationService.js";
+
+import {
+  sendFacebookMessage,
+} from "../services/metaService.js";
 
 
 /* =========================================================
@@ -2130,13 +2133,23 @@ export function Chat(
 
         input.disabled = true;
 
-        const result =
-          await addMessage(
-            conversation,
-            text,
-            "employee",
-            currentUser
-          );
+        let result;
+
+        if (channel === "facebook") {
+          result =
+            await sendFacebookMessage(
+              conversation.id,
+              text
+            );
+        } else {
+          result =
+            await addMessage(
+              conversation,
+              text,
+              "employee",
+              currentUser
+            );
+        }
 
 
         if (!result.success) {
