@@ -1,15 +1,35 @@
+import { createHash } from "node:crypto";
 import { adminDb } from "../../lib/firebaseAdmin.js";
 
-const FACEBOOK_PAGE_ID = "1092282083961021";
-const COMPANY_ID = "black-node";
+/*
+ * =========================================================
+ * CONFIGURACIÓN
+ * =========================================================
+ *
+ * Los valores actuales se mantienen como fallback para
+ * que el prototipo siga funcionando aunque todavía no
+ * hayamos creado estas variables en Vercel.
+ */
+
+const FACEBOOK_PAGE_ID =
+  process.env.META_FACEBOOK_PAGE_ID || "1092282083961021";
+
+const COMPANY_ID =
+  process.env.META_FACEBOOK_COMPANY_ID || "black-node";
+
+/*
+ * =========================================================
+ * HANDLER PRINCIPAL
+ * =========================================================
+ */
 
 export default async function handler(req, res) {
   console.log("META WEBHOOK:", req.method);
 
   /*
-   * =========================================================
+   * =======================================================
    * GET — VERIFICACIÓN DEL WEBHOOK
-   * =========================================================
+   * =======================================================
    */
 
   if (req.method === "GET") {
@@ -28,8 +48,8 @@ export default async function handler(req, res) {
       envLength: verifyToken?.length ?? 0,
       tokensMatch: Boolean(
         token &&
-        verifyToken &&
-        token === verifyToken
+          verifyToken &&
+          token === verifyToken
       ),
     });
 
@@ -66,9 +86,9 @@ export default async function handler(req, res) {
   }
 
   /*
-   * =========================================================
+   * =======================================================
    * POST — EVENTOS DE META
-   * =========================================================
+   * =======================================================
    */
 
   if (req.method === "POST") {
@@ -85,12 +105,9 @@ export default async function handler(req, res) {
       );
 
       /*
-       * Meta envía eventos de tipo:
-       *
-       * {
-       *   object: "page",
-       *   entry: [...]
-       * }
+       * =====================================================
+       * VALIDAR PAYLOAD
+       * =====================================================
        */
 
       if (
@@ -108,16 +125,16 @@ export default async function handler(req, res) {
       }
 
       /*
-       * =======================================================
+       * =====================================================
        * PROCESAR ENTRIES
-       * =======================================================
+       * =====================================================
        */
 
       for (const entry of body.entry) {
         const pageId = entry.id;
 
         /*
-         * Solo procesamos nuestra página de Black Node.
+         * Solo procesamos nuestra página.
          */
 
         if (pageId !== FACEBOOK_PAGE_ID) {
@@ -150,10 +167,8 @@ export default async function handler(req, res) {
       );
 
       /*
-       * Meta espera una respuesta 200.
-       *
-       * El error queda registrado en Vercel
-       * para poder depurarlo.
+       * Meta espera una respuesta 200 para evitar
+       * reintentos innecesarios mientras depuramos.
        */
 
       return res
@@ -163,9 +178,9 @@ export default async function handler(req, res) {
   }
 
   /*
-   * =========================================================
+   * =======================================================
    * MÉTODO NO PERMITIDO
-   * =========================================================
+   * =======================================================
    */
 
   return res
@@ -175,9 +190,9 @@ export default async function handler(req, res) {
 
 
 /*
- * ===========================================================
+ * =========================================================
  * PROCESAR EVENTO DE MESSAGING
- * ===========================================================
+ * =========================================================
  */
 
 async function processMessagingEvent(event) {
@@ -189,8 +204,8 @@ async function processMessagingEvent(event) {
   const recipientId = event.recipient?.id;
 
   /*
-   * Necesitamos ambos identificadores para poder
-   * determinar quién envió el mensaje y a qué página.
+   * Necesitamos ambos identificadores para determinar
+   * quién envió el mensaje y a qué página llegó.
    */
 
   if (!senderId || !recipientId) {
@@ -202,9 +217,9 @@ async function processMessagingEvent(event) {
   }
 
   /*
-   * =========================================================
+   * =======================================================
    * IGNORAR EVENTOS QUE NO SON MENSAJES
-   * =========================================================
+   * =======================================================
    */
 
   if (!event.message) {
@@ -225,13 +240,14 @@ async function processMessagingEvent(event) {
   const message = event.message;
 
   /*
-   * =========================================================
+   * =======================================================
    * IGNORAR ECHO
-   * =========================================================
+   * =======================================================
    *
-   * Los echoes representan mensajes enviados por nuestra
-   * propia página. Todavía no los procesamos porque el
-   * flujo outbound lo construiremos posteriormente.
+   * Los echoes representan mensajes enviados desde nuestra
+   * propia página.
+   *
+   * El flujo outbound lo construiremos posteriormente.
    */
 
   if (message.is_echo) {
@@ -243,9 +259,9 @@ async function processMessagingEvent(event) {
   }
 
   /*
-   * =========================================================
+   * =======================================================
    * MESSAGE ID
-   * =========================================================
+   * =======================================================
    */
 
   const externalMessageId =
@@ -260,9 +276,9 @@ async function processMessagingEvent(event) {
   }
 
   /*
-   * =========================================================
-   * TEXTO
-   * =========================================================
+   * =======================================================
+   * TEXTO / ADJUNTOS
+   * =======================================================
    */
 
   const text =
@@ -270,22 +286,26 @@ async function processMessagingEvent(event) {
       ? message.text.trim()
       : "";
 
+  const attachments =
+    Array.isArray(message.attachments)
+      ? message.attachments
+      : [];
+
   /*
-   * Por ahora procesamos mensajes de texto.
+   * Si existe texto usamos el texto.
    *
-   * Si el cliente manda una imagen, sticker,
-   * audio, etc., dejamos registrado el evento
-   * pero no intentamos convertirlo en texto.
+   * Si no existe texto pero sí hay attachment,
+   * generamos una representación temporal para
+   * que el mensaje no desaparezca de Pulse Inbox.
    */
 
-  if (!text) {
+  const messageText = text || getAttachmentText(attachments);
+
+  if (!messageText) {
     console.log(
-      "META EVENT: mensaje sin texto",
+      "META EVENT: mensaje sin texto ni attachment",
       {
         externalMessageId,
-        attachments: message.attachments
-          ? message.attachments.length
-          : 0,
       }
     );
 
@@ -298,14 +318,15 @@ async function processMessagingEvent(event) {
       senderId,
       recipientId,
       externalMessageId,
-      text,
+      text: messageText,
+      attachmentsCount: attachments.length,
     }
   );
 
   /*
-   * =========================================================
+   * =======================================================
    * CUSTOMER
-   * =========================================================
+   * =======================================================
    */
 
   const customerId =
@@ -346,16 +367,14 @@ async function processMessagingEvent(event) {
   }
 
   /*
-   * =========================================================
+   * =======================================================
    * CONVERSATION
-   * =========================================================
+   * =======================================================
    *
-   * Usamos un ID determinista:
+   * Un usuario de Facebook mantiene una conversación
+   * determinista con nuestra página:
    *
    * facebook_{PAGE_ID}_{SENDER_ID}
-   *
-   * Esto evita crear una conversación nueva
-   * cada vez que llegue un mensaje.
    */
 
   const conversationId =
@@ -366,13 +385,10 @@ async function processMessagingEvent(event) {
       .collection("conversations")
       .doc(conversationId);
 
-  const conversationSnapshot =
-    await conversationRef.get();
-
   /*
-   * =========================================================
+   * =======================================================
    * TIMESTAMP
-   * =========================================================
+   * =======================================================
    */
 
   const eventTimestamp =
@@ -381,28 +397,29 @@ async function processMessagingEvent(event) {
       : new Date();
 
   /*
-   * =========================================================
+   * =======================================================
    * DEDUPLICACIÓN
-   * =========================================================
+   * =======================================================
    *
-   * Meta puede reenviar eventos.
+   * En lugar de hacer una query para comprobar si existe
+   * el MID, generamos un ID determinista para el documento.
    *
-   * Antes de crear el mensaje comprobamos si
-   * ya existe un mensaje con ese externalMessageId.
+   * Si Meta reenvía exactamente el mismo evento,
+   * utilizará el mismo documento.
    */
 
-  const existingMessageSnapshot =
-    await conversationRef
-      .collection("messages")
-      .where(
-        "externalMessageId",
-        "==",
-        externalMessageId
-      )
-      .limit(1)
-      .get();
+  const messageDocumentId =
+    createMessageDocumentId(externalMessageId);
 
-  if (!existingMessageSnapshot.empty) {
+  const messageRef =
+    conversationRef
+      .collection("messages")
+      .doc(messageDocumentId);
+
+  const existingMessageSnapshot =
+    await messageRef.get();
+
+  if (existingMessageSnapshot.exists) {
     console.log(
       "META EVENT: mensaje duplicado ignorado",
       externalMessageId
@@ -412,12 +429,21 @@ async function processMessagingEvent(event) {
   }
 
   /*
-   * =========================================================
-   * CREAR CONVERSACIÓN
-   * =========================================================
+   * =======================================================
+   * CONVERSACIÓN
+   * =======================================================
    */
 
+  const conversationSnapshot =
+    await conversationRef.get();
+
   if (!conversationSnapshot.exists) {
+    /*
+     * =====================================================
+     * CREAR CONVERSACIÓN
+     * =====================================================
+     */
+
     await conversationRef.set({
       customerId,
       companyId: COMPANY_ID,
@@ -434,7 +460,7 @@ async function processMessagingEvent(event) {
       lastMessage: {
         sender: "customer",
         senderId: customerId,
-        text,
+        text: messageText,
       },
 
       createdAt: eventTimestamp,
@@ -448,9 +474,9 @@ async function processMessagingEvent(event) {
 
   } else {
     /*
-     * =======================================================
+     * =====================================================
      * ACTUALIZAR CONVERSACIÓN EXISTENTE
-     * =======================================================
+     * =====================================================
      */
 
     const currentData =
@@ -478,7 +504,7 @@ async function processMessagingEvent(event) {
       lastMessage: {
         sender: "customer",
         senderId: customerId,
-        text,
+        text: messageText,
       },
 
       updatedAt: eventTimestamp,
@@ -491,31 +517,38 @@ async function processMessagingEvent(event) {
   }
 
   /*
-   * =========================================================
+   * =======================================================
    * CREAR MESSAGE
-   * =========================================================
+   * =======================================================
    */
 
-  const messageRef =
-    conversationRef
-      .collection("messages")
-      .doc();
-
-  await messageRef.set({
+  const messageData = {
     conversationId,
 
     sender: "customer",
 
     senderId: customerId,
 
-    text,
+    text: messageText,
 
     externalMessageId,
 
     channel: "facebook",
 
     createdAt: eventTimestamp,
-  });
+  };
+
+  /*
+   * Guardamos attachments solamente cuando existen.
+   * Esto nos permitirá utilizarlos posteriormente para
+   * renderizar imágenes, audio, archivos, etc.
+   */
+
+  if (attachments.length > 0) {
+    messageData.attachments = attachments;
+  }
+
+  await messageRef.set(messageData);
 
   console.log(
     "META EVENT: mensaje guardado",
@@ -525,4 +558,53 @@ async function processMessagingEvent(event) {
       externalMessageId,
     }
   );
+}
+
+
+/*
+ * =========================================================
+ * GENERAR ID DETERMINISTA PARA MESSAGE
+ * =========================================================
+ */
+
+function createMessageDocumentId(externalMessageId) {
+  return createHash("sha256")
+    .update(externalMessageId)
+    .digest("hex");
+}
+
+
+/*
+ * =========================================================
+ * REPRESENTACIÓN DE ATTACHMENTS
+ * =========================================================
+ */
+
+function getAttachmentText(attachments) {
+  if (!attachments.length) {
+    return "";
+  }
+
+  const type =
+    attachments[0]?.type;
+
+  switch (type) {
+    case "image":
+      return "📷 Imagen";
+
+    case "audio":
+      return "🎤 Audio";
+
+    case "video":
+      return "🎥 Video";
+
+    case "file":
+      return "📎 Archivo";
+
+    case "fallback":
+      return "🔗 Enlace";
+
+    default:
+      return "📎 Archivo adjunto";
+  }
 }
