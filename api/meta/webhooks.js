@@ -1,5 +1,39 @@
 import { createHash } from "node:crypto";
-import { adminDb } from "../../lib/firebaseAdmin.js";
+import { cert, getApps, initializeApp } from "firebase-admin/app";
+import { getFirestore } from "firebase-admin/firestore";
+
+/*
+ * =========================================================
+ * FIREBASE ADMIN
+ * =========================================================
+ *
+ * Inicializamos Firebase Admin directamente dentro de esta
+ * Function para evitar problemas de inclusión de archivos
+ * compartidos en el bundle de Vercel.
+ */
+
+function getAdminDb() {
+  const existingApps = getApps();
+
+  const firebaseApp =
+    existingApps.length > 0
+      ? existingApps[0]
+      : initializeApp({
+          credential: cert({
+            projectId: process.env.FIREBASE_PROJECT_ID,
+            clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+            privateKey:
+              process.env.FIREBASE_PRIVATE_KEY?.replace(
+                /\\n/g,
+                "\n"
+              ),
+          }),
+        });
+
+  return getFirestore(firebaseApp);
+}
+
+const adminDb = getAdminDb();
 
 /*
  * =========================================================
@@ -12,10 +46,12 @@ import { adminDb } from "../../lib/firebaseAdmin.js";
  */
 
 const FACEBOOK_PAGE_ID =
-  process.env.META_FACEBOOK_PAGE_ID || "1092282083961021";
+  process.env.META_FACEBOOK_PAGE_ID ||
+  "1092282083961021";
 
 const COMPANY_ID =
-  process.env.META_FACEBOOK_COMPANY_ID || "black-node";
+  process.env.META_FACEBOOK_COMPANY_ID ||
+  "black-node";
 
 /*
  * =========================================================
@@ -37,21 +73,25 @@ export default async function handler(req, res) {
     const token = req.query?.["hub.verify_token"];
     const challenge = req.query?.["hub.challenge"];
 
-    const verifyToken = process.env.META_VERIFY_TOKEN;
+    const verifyToken =
+      process.env.META_VERIFY_TOKEN;
 
-    console.log("META WEBHOOK DEBUG:", {
-      mode,
-      tokenReceived: Boolean(token),
-      challengeReceived: Boolean(challenge),
-      envConfigured: Boolean(verifyToken),
-      tokenLength: token?.length ?? 0,
-      envLength: verifyToken?.length ?? 0,
-      tokensMatch: Boolean(
-        token &&
-          verifyToken &&
-          token === verifyToken
-      ),
-    });
+    console.log(
+      "META WEBHOOK DEBUG:",
+      {
+        mode,
+        tokenReceived: Boolean(token),
+        challengeReceived: Boolean(challenge),
+        envConfigured: Boolean(verifyToken),
+        tokenLength: token?.length ?? 0,
+        envLength: verifyToken?.length ?? 0,
+        tokensMatch: Boolean(
+          token &&
+            verifyToken &&
+            token === verifyToken
+        ),
+      }
+    );
 
     if (!verifyToken) {
       console.error(
@@ -60,7 +100,9 @@ export default async function handler(req, res) {
 
       return res
         .status(500)
-        .send("META_VERIFY_TOKEN_NOT_CONFIGURED");
+        .send(
+          "META_VERIFY_TOKEN_NOT_CONFIGURED"
+        );
     }
 
     if (
@@ -200,8 +242,11 @@ async function processMessagingEvent(event) {
     return;
   }
 
-  const senderId = event.sender?.id;
-  const recipientId = event.recipient?.id;
+  const senderId =
+    event.sender?.id;
+
+  const recipientId =
+    event.recipient?.id;
 
   /*
    * Necesitamos ambos identificadores para determinar
@@ -228,16 +273,23 @@ async function processMessagingEvent(event) {
       {
         senderId,
         recipientId,
-        hasDelivery: Boolean(event.delivery),
-        hasRead: Boolean(event.read),
-        hasPostback: Boolean(event.postback),
+        hasDelivery: Boolean(
+          event.delivery
+        ),
+        hasRead: Boolean(
+          event.read
+        ),
+        hasPostback: Boolean(
+          event.postback
+        ),
       }
     );
 
     return;
   }
 
-  const message = event.message;
+  const message =
+    event.message;
 
   /*
    * =======================================================
@@ -287,7 +339,9 @@ async function processMessagingEvent(event) {
       : "";
 
   const attachments =
-    Array.isArray(message.attachments)
+    Array.isArray(
+      message.attachments
+    )
       ? message.attachments
       : [];
 
@@ -299,7 +353,11 @@ async function processMessagingEvent(event) {
    * que el mensaje no desaparezca de Pulse Inbox.
    */
 
-  const messageText = text || getAttachmentText(attachments);
+  const messageText =
+    text ||
+    getAttachmentText(
+      attachments
+    );
 
   if (!messageText) {
     console.log(
@@ -319,7 +377,8 @@ async function processMessagingEvent(event) {
       recipientId,
       externalMessageId,
       text: messageText,
-      attachmentsCount: attachments.length,
+      attachmentsCount:
+        attachments.length,
     }
   );
 
@@ -409,7 +468,9 @@ async function processMessagingEvent(event) {
    */
 
   const messageDocumentId =
-    createMessageDocumentId(externalMessageId);
+    createMessageDocumentId(
+      externalMessageId
+    );
 
   const messageRef =
     conversationRef
@@ -480,7 +541,8 @@ async function processMessagingEvent(event) {
      */
 
     const currentData =
-      conversationSnapshot.data() || {};
+      conversationSnapshot.data() ||
+      {};
 
     const currentUnreadCount =
       Number(
@@ -545,10 +607,13 @@ async function processMessagingEvent(event) {
    */
 
   if (attachments.length > 0) {
-    messageData.attachments = attachments;
+    messageData.attachments =
+      attachments;
   }
 
-  await messageRef.set(messageData);
+  await messageRef.set(
+    messageData
+  );
 
   console.log(
     "META EVENT: mensaje guardado",
@@ -567,7 +632,9 @@ async function processMessagingEvent(event) {
  * =========================================================
  */
 
-function createMessageDocumentId(externalMessageId) {
+function createMessageDocumentId(
+  externalMessageId
+) {
   return createHash("sha256")
     .update(externalMessageId)
     .digest("hex");
@@ -580,7 +647,9 @@ function createMessageDocumentId(externalMessageId) {
  * =========================================================
  */
 
-function getAttachmentText(attachments) {
+function getAttachmentText(
+  attachments
+) {
   if (!attachments.length) {
     return "";
   }
