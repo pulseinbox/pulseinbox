@@ -8,9 +8,7 @@
   ],
   "functions": {
     "api/firebase-test.js": {
-      "includeFiles": [
-        "lib/firebaseAdmin.js"
-      ]
+      "includeFiles": "lib/firebaseAdmin.js"
     }
   }
 }
