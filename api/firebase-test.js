@@ -1,7 +1,27 @@
-import { adminDb } from "../lib/firebaseAdmin.js";
+import { cert, getApps, initializeApp } from "firebase-admin/app";
+import { getFirestore } from "firebase-admin/firestore";
+
+function getAdminDb() {
+  const existingApps = getApps();
+
+  const app =
+    existingApps.length > 0
+      ? existingApps[0]
+      : initializeApp({
+          credential: cert({
+            projectId: process.env.FIREBASE_PROJECT_ID,
+            clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+            privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
+          }),
+        });
+
+  return getFirestore(app);
+}
 
 export default async function handler(req, res) {
   try {
+    const adminDb = getAdminDb();
+
     const snapshot = await adminDb
       .collection("companies")
       .limit(1)
