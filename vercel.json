@@ -1,8 +1,21 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
     {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
-  ]
+  ],
+  "functions": {
+    "api/firebase-test.js": {
+      "includeFiles": [
+        "lib/firebaseAdmin.js"
+      ]
+    },
+    "api/meta/webhooks.js": {
+      "includeFiles": [
+        "lib/firebaseAdmin.js"
+      ]
+    }
+  }
 }
