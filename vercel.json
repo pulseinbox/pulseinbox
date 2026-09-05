@@ -8,14 +8,10 @@
   ],
   "functions": {
     "api/firebase-test.js": {
-      "includeFiles": [
-        "lib/firebaseAdmin.js"
-      ]
+      "includeFiles": "lib/firebaseAdmin.js"
     },
     "api/meta/webhooks.js": {
-      "includeFiles": [
-        "lib/firebaseAdmin.js"
-      ]
+      "includeFiles": "lib/firebaseAdmin.js"
     }
   }
 }
