@@ -9,6 +9,12 @@ import {
   authReady,
 } from "./auth/auth.js";
 
+import {
+  initializeRouter,
+  getCurrentPath,
+  navigate,
+} from "./router.js";
+
 
 /* =========================================================
    ROOT
@@ -16,6 +22,17 @@ import {
 
 const root =
   document.querySelector("#app");
+
+
+/* =========================================================
+   PUBLIC ROUTES
+========================================================= */
+
+const PUBLIC_ROUTES = [
+  "/privacy",
+  "/terms",
+  "/data-deletion",
+];
 
 
 /* =========================================================
@@ -98,9 +115,38 @@ function renderLogin() {
 
 async function initializeApp() {
 
+  const currentPath =
+    getCurrentPath();
+
+
   /*
-   * Esperamos a que Firebase determine
-   * si existe una sesión activa.
+   * Las páginas legales son públicas.
+   *
+   * No esperamos Firebase Auth
+   * para mostrarlas.
+   */
+
+  if (
+    PUBLIC_ROUTES.includes(
+      currentPath
+    )
+  ) {
+
+    const handled =
+      await navigate(
+        currentPath
+      );
+
+    if (handled) {
+      return;
+    }
+
+  }
+
+
+  /*
+   * Para la aplicación privada
+   * sí esperamos Firebase.
    */
 
   await authReady;
@@ -132,5 +178,7 @@ async function initializeApp() {
 /* =========================================================
    START
 ========================================================= */
+
+initializeRouter();
 
 initializeApp();

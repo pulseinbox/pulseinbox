@@ -1,0 +1,533 @@
+/* =========================================================
+   LEGAL PAGES
+========================================================= */
+
+.legal-page {
+
+  position: relative;
+
+  min-height: 100vh;
+
+  padding: 48px 24px;
+
+  color: var(--color-text);
+
+  overflow-x: hidden;
+
+}
+
+
+/* =========================================================
+   BACKGROUND
+========================================================= */
+
+.legal-page__background {
+
+  position: fixed;
+
+  inset: 0;
+
+  z-index: -1;
+
+  background:
+    linear-gradient(
+      rgba(0, 0, 0, 0.28),
+      rgba(0, 0, 0, 0.45)
+    ),
+    url("/assets/background.png")
+    center / cover
+    no-repeat;
+
+}
+
+
+/* =========================================================
+   CONTAINER
+========================================================= */
+
+.legal-page__container {
+
+  width: min(
+    100%,
+    920px
+  );
+
+  margin: 0 auto;
+
+}
+
+
+/* =========================================================
+   BACK BUTTON
+========================================================= */
+
+.legal-page__back {
+
+  display: inline-flex;
+
+  align-items: center;
+
+  gap: 9px;
+
+  margin-bottom: 42px;
+
+  padding: 10px 15px;
+
+  border: 1px solid var(--glass-border);
+
+  border-radius: 12px;
+
+  background: rgba(255, 255, 255, 0.06);
+
+  color: var(--color-text);
+
+  text-decoration: none;
+
+  font-size: 13px;
+
+  transition:
+    background 0.2s ease,
+    transform 0.2s ease;
+
+}
+
+
+.legal-page__back:hover {
+
+  background: rgba(255, 255, 255, 0.10);
+
+  transform: translateX(-2px);
+
+}
+
+
+/* =========================================================
+   HEADER
+========================================================= */
+
+.legal-page__header {
+
+  display: flex;
+
+  align-items: flex-start;
+
+  gap: 22px;
+
+  margin-bottom: 30px;
+
+  padding: 28px;
+
+  border: 1px solid var(--glass-border);
+
+  border-radius: 22px;
+
+  background: var(--glass-background);
+
+  backdrop-filter: blur(24px);
+
+  -webkit-backdrop-filter: blur(24px);
+
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.20);
+
+}
+
+
+.legal-page__icon {
+
+  flex-shrink: 0;
+
+  width: 58px;
+
+  height: 58px;
+
+  display: flex;
+
+  align-items: center;
+
+  justify-content: center;
+
+  border-radius: 16px;
+
+  background: rgba(255, 255, 255, 0.08);
+
+  border: 1px solid rgba(255, 255, 255, 0.10);
+
+  font-size: 22px;
+
+}
+
+
+.legal-page__heading {
+
+  min-width: 0;
+
+}
+
+
+.legal-page__eyebrow {
+
+  display: block;
+
+  margin-bottom: 6px;
+
+  font-size: 11px;
+
+  font-weight: 600;
+
+  letter-spacing: 0.12em;
+
+  text-transform: uppercase;
+
+  opacity: 0.55;
+
+}
+
+
+.legal-page__heading h1 {
+
+  margin: 0;
+
+  font-size: clamp(28px, 4vw, 42px);
+
+  line-height: 1.1;
+
+  font-weight: 600;
+
+}
+
+
+.legal-page__heading p {
+
+  margin: 12px 0 0;
+
+  max-width: 680px;
+
+  font-size: 15px;
+
+  line-height: 1.6;
+
+  opacity: 0.70;
+
+}
+
+
+.legal-page__updated {
+
+  display: block;
+
+  margin-top: 12px;
+
+  font-size: 12px;
+
+  opacity: 0.45;
+
+}
+
+
+/* =========================================================
+   CONTENT
+========================================================= */
+
+.legal-page__content {
+
+  padding: 38px;
+
+  border: 1px solid var(--glass-border);
+
+  border-radius: 22px;
+
+  background: var(--glass-background);
+
+  backdrop-filter: blur(24px);
+
+  -webkit-backdrop-filter: blur(24px);
+
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.18);
+
+}
+
+
+/* =========================================================
+   SECTIONS
+========================================================= */
+
+.legal-section {
+
+  padding-bottom: 30px;
+
+  margin-bottom: 30px;
+
+  border-bottom:
+    1px solid rgba(255, 255, 255, 0.07);
+
+}
+
+
+.legal-section:last-child {
+
+  padding-bottom: 0;
+
+  margin-bottom: 0;
+
+  border-bottom: none;
+
+}
+
+
+.legal-section h2 {
+
+  margin: 0 0 13px;
+
+  font-size: 19px;
+
+  font-weight: 600;
+
+}
+
+
+.legal-section p {
+
+  margin: 0 0 13px;
+
+  font-size: 14px;
+
+  line-height: 1.8;
+
+  opacity: 0.76;
+
+}
+
+
+.legal-section p:last-child {
+
+  margin-bottom: 0;
+
+}
+
+
+.legal-section ul {
+
+  margin: 12px 0 0;
+
+  padding-left: 22px;
+
+}
+
+
+.legal-section li {
+
+  margin-bottom: 9px;
+
+  font-size: 14px;
+
+  line-height: 1.7;
+
+  opacity: 0.76;
+
+}
+
+
+.legal-section a {
+
+  color: inherit;
+
+  font-weight: 500;
+
+}
+
+
+.legal-section strong {
+
+  font-weight: 600;
+
+  opacity: 0.95;
+
+}
+
+
+/* =========================================================
+   DATA DELETION ACTION
+========================================================= */
+
+.legal-action {
+
+  display: flex;
+
+  align-items: center;
+
+  gap: 15px;
+
+  margin-top: 20px;
+
+  padding: 18px;
+
+  border: 1px solid rgba(255, 255, 255, 0.08);
+
+  border-radius: 15px;
+
+  background: rgba(255, 255, 255, 0.045);
+
+}
+
+
+.legal-action > i {
+
+  flex-shrink: 0;
+
+  width: 42px;
+
+  height: 42px;
+
+  display: flex;
+
+  align-items: center;
+
+  justify-content: center;
+
+  border-radius: 12px;
+
+  background: rgba(255, 255, 255, 0.08);
+
+}
+
+
+.legal-action div {
+
+  display: flex;
+
+  flex-direction: column;
+
+  gap: 4px;
+
+}
+
+
+.legal-action strong {
+
+  font-size: 14px;
+
+}
+
+
+.legal-action span {
+
+  font-size: 12px;
+
+  opacity: 0.55;
+
+}
+
+
+.legal-action a {
+
+  font-size: 13px;
+
+}
+
+
+/* =========================================================
+   FOOTER
+========================================================= */
+
+.legal-page__footer {
+
+  display: flex;
+
+  align-items: center;
+
+  justify-content: space-between;
+
+  gap: 20px;
+
+  padding: 25px 5px 5px;
+
+  font-size: 11px;
+
+  opacity: 0.45;
+
+}
+
+
+.legal-page__footer nav {
+
+  display: flex;
+
+  gap: 18px;
+
+}
+
+
+.legal-page__footer a {
+
+  color: inherit;
+
+  text-decoration: none;
+
+}
+
+
+.legal-page__footer a:hover {
+
+  opacity: 1;
+
+}
+
+
+/* =========================================================
+   RESPONSIVE
+========================================================= */
+
+@media (max-width: 700px) {
+
+  .legal-page {
+
+    padding: 25px 15px;
+
+  }
+
+
+  .legal-page__back {
+
+    margin-bottom: 25px;
+
+  }
+
+
+  .legal-page__header {
+
+    flex-direction: column;
+
+    padding: 24px;
+
+    border-radius: 18px;
+
+  }
+
+
+  .legal-page__content {
+
+    padding: 25px 21px;
+
+    border-radius: 18px;
+
+  }
+
+
+  .legal-page__footer {
+
+    flex-direction: column;
+
+    align-items: flex-start;
+
+  }
+
+
+  .legal-page__footer nav {
+
+    flex-wrap: wrap;
+
+  }
+
+}
