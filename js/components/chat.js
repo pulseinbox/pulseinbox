@@ -20,6 +20,7 @@ import {
 
 import {
   sendFacebookMessage,
+  sendFacebookImage,
 } from "../services/metaService.js";
 
 import { getAuth } from "firebase/auth";
@@ -1609,6 +1610,14 @@ export function Chat(
       ".chat-upload-status"
     );
 
+  /*
+   * Imagen actualmente preparada para enviar.
+   * La URL pertenece a ImageKit y se conserva
+   * únicamente mientras esta instancia de Chat
+   * está activa.
+   */
+  let pendingImage = null;
+
 
   /* =======================================================
      QUICK REPLIES
@@ -2635,7 +2644,7 @@ export function Chat(
           </span>
 
           <small>
-            Lista para la siguiente fase de envío.
+            Lista para enviar.
           </small>
         </div>
       </div>
@@ -2710,6 +2719,13 @@ export function Chat(
             }
           );
 
+          pendingImage = {
+            url: uploadData.url,
+            fileName: file.name,
+            fileType: file.type,
+            fileSize: file.size,
+          };
+
           renderUploadedImagePreview(
             uploadData,
             file
@@ -2771,8 +2787,31 @@ export function Chat(
       const text =
         input.value.trim();
 
+      const hasText =
+        Boolean(text);
 
-      if (!text) {
+      const hasImage =
+        Boolean(pendingImage?.url);
+
+
+      /*
+       * Nothing to send.
+       */
+      if (!hasText && !hasImage) {
+        return;
+      }
+
+
+      /*
+       * Current image implementation sends the image
+       * independently. Captions will be handled in a
+       * later phase so we never silently split a message.
+       */
+      if (hasImage && hasText) {
+        setImageUploadStatus(
+          "Por ahora envía la imagen sin texto. El envío con descripción se agregará después.",
+          "error"
+        );
         return;
       }
 
@@ -2781,15 +2820,38 @@ export function Chat(
 
         input.disabled = true;
 
+        if (imageButton) {
+          imageButton.disabled = true;
+        }
+
+
         let result;
 
-        if (channel === "facebook") {
+
+        if (hasImage) {
+
+          setImageUploadStatus(
+            "Enviando imagen...",
+            "loading"
+          );
+
+          result =
+            await sendFacebookImage(
+              conversation.id,
+              pendingImage.url,
+              pendingImage.fileName
+            );
+
+        } else if (channel === "facebook") {
+
           result =
             await sendFacebookMessage(
               conversation.id,
               text
             );
+
         } else {
+
           result =
             await addMessage(
               conversation,
@@ -2797,44 +2859,68 @@ export function Chat(
               "employee",
               currentUser
             );
+
         }
 
 
-        if (!result.success) {
+        if (!result?.success) {
+
           console.error(
             "No se pudo enviar el mensaje:",
-            result.reason
+            result?.reason
           );
+
+          if (hasImage) {
+            setImageUploadStatus(
+              result?.reason === "invalid_data"
+                ? "La imagen no es válida para enviar."
+                : "No se pudo enviar la imagen.",
+              "error"
+            );
+          }
 
           return;
         }
 
 
         /*
-         * No agregamos manualmente el mensaje
-         * al DOM. Firestore + onSnapshot()
-         * será la única fuente de verdad.
-         *
-         * Esto evita duplicados cuando Firestore
-         * devuelve el mensaje recién creado.
+         * Firestore + onSnapshot() sigue siendo
+         * la única fuente de verdad del mensaje.
          */
-
         input.value = "";
 
 
-        updateStatusUI(
-          result.conversation.status
-        );
+        if (hasImage) {
+          pendingImage = null;
+          setImageUploadStatus();
+        }
 
 
-        if (
-          typeof onConversationChange ===
-          "function"
-        ) {
+        /*
+         * Some successful backend responses may not
+         * include the full conversation object.
+         * Never access .status blindly.
+         */
+        if (result.conversation) {
 
-          onConversationChange(
-            result.conversation
+          updateStatusUI(
+            result.conversation.status
           );
+
+          if (
+            typeof onConversationChange ===
+            "function"
+          ) {
+
+            onConversationChange(
+              result.conversation
+            );
+
+          }
+
+        } else if (channel === "facebook") {
+
+          updateStatusUI("active");
 
         }
 
@@ -2862,10 +2948,22 @@ export function Chat(
           error
         );
 
+        if (hasImage) {
+          setImageUploadStatus(
+            "Ocurrió un error enviando la imagen.",
+            "error"
+          );
+        }
+
       } finally {
 
         input.disabled =
           !canReply;
+
+        if (imageButton) {
+          imageButton.disabled =
+            !canReply;
+        }
 
         input.focus();
 
