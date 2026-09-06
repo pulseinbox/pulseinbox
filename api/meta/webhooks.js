@@ -399,10 +399,51 @@ async function processMessagingEvent(event) {
   const customerSnapshot =
     await customerRef.get();
 
+  /*
+   * =======================================================
+   * OBTENER IDENTIDAD DE FACEBOOK
+   * =======================================================
+   *
+   * Meta no incluye el nombre ni la foto dentro del webhook.
+   * Utilizamos el PSID (senderId) para consultar el perfil
+   * mediante el User Profile API.
+   *
+   * Solo hacemos la consulta cuando el cliente es nuevo o
+   * todavía tiene la identidad placeholder. Esto evita hacer
+   * una llamada a Meta en cada mensaje recibido.
+   */
+
+  const existingCustomer =
+    customerSnapshot.exists
+      ? customerSnapshot.data() || {}
+      : {};
+
+  const needsFacebookProfile =
+    !customerSnapshot.exists ||
+    existingCustomer.name === "Cliente de Facebook" ||
+    !existingCustomer.avatar;
+
+  let facebookProfile = null;
+
+  if (needsFacebookProfile) {
+    facebookProfile =
+      await getFacebookUserProfile(senderId);
+  }
+
+  const customerName =
+    facebookProfile?.name ||
+    existingCustomer.name ||
+    "Cliente de Facebook";
+
+  const customerAvatar =
+    facebookProfile?.profile_pic ||
+    existingCustomer.avatar ||
+    null;
+
   if (!customerSnapshot.exists) {
     await customerRef.set({
-      name: "Cliente de Facebook",
-      avatar: null,
+      name: customerName,
+      avatar: customerAvatar,
       active: true,
       externalId: senderId,
       channel: "facebook",
@@ -412,17 +453,39 @@ async function processMessagingEvent(event) {
 
     console.log(
       "META EVENT: customer creado",
-      customerId
+      {
+        customerId,
+        name: customerName,
+        hasAvatar: Boolean(customerAvatar),
+      }
     );
   } else {
+    const customerUpdate = {
+      updatedAt: new Date(),
+    };
+
+    if (facebookProfile) {
+      customerUpdate.name = customerName;
+      customerUpdate.avatar = customerAvatar;
+    }
+
     await customerRef.set(
-      {
-        updatedAt: new Date(),
-      },
+      customerUpdate,
       {
         merge: true,
       }
     );
+
+    if (facebookProfile) {
+      console.log(
+        "META EVENT: identidad de customer actualizada",
+        {
+          customerId,
+          name: customerName,
+          hasAvatar: Boolean(customerAvatar),
+        }
+      );
+    }
   }
 
   /*
@@ -623,6 +686,106 @@ async function processMessagingEvent(event) {
       externalMessageId,
     }
   );
+}
+
+
+/*
+ * =========================================================
+ * OBTENER PERFIL DEL USUARIO DE FACEBOOK
+ * =========================================================
+ */
+
+async function getFacebookUserProfile(senderId) {
+  const accessToken =
+    process.env.META_PAGE_ACCESS_TOKEN;
+
+  const graphApiVersion =
+    process.env.META_GRAPH_API_VERSION ||
+    "v26.0";
+
+  if (!accessToken) {
+    console.error(
+      "META PROFILE: META_PAGE_ACCESS_TOKEN no está configurado"
+    );
+
+    return null;
+  }
+
+  const url =
+    `https://graph.facebook.com/${graphApiVersion}/${encodeURIComponent(senderId)}` +
+    `?fields=id,first_name,last_name,profile_pic` +
+    `&access_token=${encodeURIComponent(accessToken)}`;
+
+  console.log(
+    "META PROFILE: consultando perfil",
+    senderId
+  );
+
+  try {
+    const response = await fetch(url);
+
+    const data = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      console.error(
+        "META PROFILE: error consultando perfil",
+        {
+          status: response.status,
+          error: data?.error || data,
+          senderId,
+        }
+      );
+
+      return null;
+    }
+
+    const firstName =
+      typeof data?.first_name === "string"
+        ? data.first_name.trim()
+        : "";
+
+    const lastName =
+      typeof data?.last_name === "string"
+        ? data.last_name.trim()
+        : "";
+
+    const name =
+      [firstName, lastName]
+        .filter(Boolean)
+        .join(" ")
+        .trim() ||
+      "Cliente de Facebook";
+
+    const profile = {
+      id: data?.id || senderId,
+      name,
+      profile_pic:
+        typeof data?.profile_pic === "string"
+          ? data.profile_pic
+          : null,
+    };
+
+    console.log(
+      "META PROFILE: perfil obtenido",
+      {
+        senderId,
+        name: profile.name,
+        hasAvatar: Boolean(profile.profile_pic),
+      }
+    );
+
+    return profile;
+  } catch (error) {
+    console.error(
+      "META PROFILE: error de red",
+      {
+        senderId,
+        error,
+      }
+    );
+
+    return null;
+  }
 }
 
 
