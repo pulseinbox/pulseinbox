@@ -174,9 +174,252 @@ function getEmployee(
    MESSAGE MARKUP
 ========================================================= */
 
+function getSafeAttachmentUrl(value) {
+  if (!value || typeof value !== "string") {
+    return null;
+  }
+
+  try {
+    const url = new URL(value, window.location.origin);
+
+    if (url.protocol !== "https:" && url.protocol !== "http:") {
+      return null;
+    }
+
+    return url.href;
+  } catch {
+    return null;
+  }
+}
+
+
+function getAttachmentType(attachment) {
+  return String(
+    attachment?.type ||
+    attachment?.payload?.type ||
+    "file"
+  ).toLowerCase();
+}
+
+
+function getAttachmentUrl(attachment) {
+  return getSafeAttachmentUrl(
+    attachment?.payload?.url ||
+    attachment?.url ||
+    attachment?.payload?.src ||
+    attachment?.src ||
+    null
+  );
+}
+
+
+function getAttachmentTitle(attachment, type) {
+  const title =
+    attachment?.title ||
+    attachment?.payload?.title ||
+    attachment?.name ||
+    attachment?.filename;
+
+  if (title) {
+    return String(title);
+  }
+
+  switch (type) {
+    case "image":
+      return "Imagen";
+
+    case "video":
+      return "Video";
+
+    case "audio":
+      return "Audio";
+
+    case "file":
+      return "Archivo";
+
+    default:
+      return "Archivo adjunto";
+  }
+}
+
+
+function getAttachmentIcon(type) {
+  switch (type) {
+    case "image":
+      return "fa-regular fa-image";
+
+    case "video":
+      return "fa-solid fa-play";
+
+    case "audio":
+      return "fa-solid fa-volume-high";
+
+    case "file":
+      return "fa-regular fa-file";
+
+    default:
+      return "fa-solid fa-paperclip";
+  }
+}
+
+
+function isAttachmentPlaceholder(text) {
+  const normalizedText = String(text || "").trim();
+
+  return [
+    "📷 Imagen",
+    "🎤 Audio",
+    "🎥 Video",
+    "📎 Archivo",
+    "🔗 Enlace",
+    "📎 Archivo adjunto",
+  ].includes(normalizedText);
+}
+
+
+function createAttachmentMarkup(attachment) {
+  const type = getAttachmentType(attachment);
+  const url = getAttachmentUrl(attachment);
+  const title = getAttachmentTitle(attachment, type);
+  const escapedTitle = escapeHtml(title);
+
+  if (!url) {
+    return `
+      <div class="chat-attachment chat-attachment--unavailable">
+        <span class="chat-attachment-icon">
+          <i class="${escapeHtml(getAttachmentIcon(type))}"></i>
+        </span>
+
+        <span class="chat-attachment-info">
+          <span class="chat-attachment-title">
+            ${escapedTitle}
+          </span>
+          <span class="chat-attachment-status">
+            Archivo no disponible
+          </span>
+        </span>
+      </div>
+    `;
+  }
+
+  if (type === "image") {
+    return `
+      <a
+        class="chat-attachment chat-attachment--image"
+        href="${escapeHtml(url)}"
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label="Abrir ${escapedTitle}"
+      >
+        <img
+          src="${escapeHtml(url)}"
+          alt="${escapedTitle}"
+          loading="lazy"
+          referrerpolicy="no-referrer"
+        />
+      </a>
+    `;
+  }
+
+  if (type === "video") {
+    return `
+      <div class="chat-attachment chat-attachment--video">
+        <video
+          controls
+          preload="metadata"
+          playsinline
+          src="${escapeHtml(url)}"
+        >
+          Tu navegador no puede reproducir este video.
+        </video>
+      </div>
+    `;
+  }
+
+  if (type === "audio") {
+    return `
+      <div class="chat-attachment chat-attachment--audio">
+        <div class="chat-attachment-header">
+          <span class="chat-attachment-icon">
+            <i class="fa-solid fa-volume-high"></i>
+          </span>
+
+          <span class="chat-attachment-title">
+            ${escapedTitle}
+          </span>
+        </div>
+
+        <audio
+          controls
+          preload="metadata"
+          src="${escapeHtml(url)}"
+        >
+          Tu navegador no puede reproducir este audio.
+        </audio>
+      </div>
+    `;
+  }
+
+  return `
+    <a
+      class="chat-attachment chat-attachment--file"
+      href="${escapeHtml(url)}"
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      <span class="chat-attachment-icon">
+        <i class="${escapeHtml(getAttachmentIcon(type))}"></i>
+      </span>
+
+      <span class="chat-attachment-info">
+        <span class="chat-attachment-title">
+          ${escapedTitle}
+        </span>
+        <span class="chat-attachment-action">
+          Abrir archivo
+        </span>
+      </span>
+
+      <i class="fa-solid fa-arrow-up-right-from-square chat-attachment-open"></i>
+    </a>
+  `;
+}
+
+
 function createMessageMarkup(message) {
   const isOutgoing =
     message.sender === "employee";
+
+  const text =
+    typeof message.text === "string"
+      ? message.text.trim()
+      : "";
+
+  const attachments = Array.isArray(message.attachments)
+    ? message.attachments
+    : [];
+
+  const shouldShowText =
+    Boolean(text) &&
+    !(attachments.length > 0 && isAttachmentPlaceholder(text));
+
+  const textMarkup = shouldShowText
+    ? `
+        <div class="chat-message-text">
+          ${escapeHtml(text).replaceAll("\n", "<br>")}
+        </div>
+      `
+    : "";
+
+  const attachmentsMarkup = attachments.length > 0
+    ? `
+        <div class="chat-attachments">
+          ${attachments
+            .map(createAttachmentMarkup)
+            .join("")}
+        </div>
+      `
+    : "";
 
   return `
     <div
@@ -187,12 +430,17 @@ function createMessageMarkup(message) {
       }"
     >
 
-      <div class="chat-bubble">
-        ${escapeHtml(message.text)}
+      <div class="chat-bubble ${
+        attachments.length > 0
+          ? "has-attachments"
+          : ""
+      }">
+        ${textMarkup}
+        ${attachmentsMarkup}
       </div>
 
       <time class="chat-message-time">
-        ${escapeHtml(message.timestamp)}
+        ${escapeHtml(message.timestamp || "")}
       </time>
 
     </div>
@@ -2174,21 +2422,20 @@ export function Chat(
         input.value = "";
 
 
-        if (result.conversation) {
-          updateStatusUI(
-            result.conversation.status
+        updateStatusUI(
+          result.conversation.status
+        );
+
+
+        if (
+          typeof onConversationChange ===
+          "function"
+        ) {
+
+          onConversationChange(
+            result.conversation
           );
 
-          if (
-            typeof onConversationChange ===
-            "function"
-          ) {
-            onConversationChange(
-              result.conversation
-            );
-          }
-        } else if (channel === "facebook") {
-          updateStatusUI("active");
         }
 
 
