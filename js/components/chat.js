@@ -22,6 +22,188 @@ import {
   sendFacebookMessage,
 } from "../services/metaService.js";
 
+import { getAuth } from "firebase/auth";
+import { firebaseApp } from "../firebase/firebase.js";
+
+
+/* =========================================================
+   IMAGEKIT UPLOAD
+========================================================= */
+
+const IMAGEKIT_UPLOAD_ENDPOINT =
+  "https://upload.imagekit.io/api/v1/files/upload";
+
+const IMAGEKIT_MAX_IMAGE_SIZE =
+  25 * 1024 * 1024;
+
+function sanitizeImageFileName(fileName) {
+  const extension = String(fileName || "")
+    .split(".")
+    .pop()
+    .toLowerCase();
+
+  const baseName = String(fileName || "")
+    .replace(/\.[^/.]+$/, "")
+    .replace(/[^a-zA-Z0-9_-]/g, "_")
+    .replace(/_+/g, "_")
+    .slice(0, 80);
+
+  return `${baseName || "image"}${extension ? `.${extension}` : ""}`;
+}
+
+async function uploadImageToImageKit(file, conversation) {
+  if (!(file instanceof File)) {
+    throw new Error("invalid_file");
+  }
+
+  if (!file.type.startsWith("image/")) {
+    throw new Error("invalid_image_type");
+  }
+
+  if (file.size > IMAGEKIT_MAX_IMAGE_SIZE) {
+    throw new Error("image_too_large");
+  }
+
+  const auth = getAuth(firebaseApp);
+  const firebaseUser = auth.currentUser;
+
+  if (!firebaseUser) {
+    throw new Error("user_not_authenticated");
+  }
+
+  const idToken =
+    await firebaseUser.getIdToken();
+
+  const authResponse =
+    await fetch("/api/imagekit/auth", {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+      },
+    });
+
+  let authData = null;
+
+  try {
+    authData = await authResponse.json();
+  } catch {
+    authData = null;
+  }
+
+  if (
+    !authResponse.ok ||
+    !authData?.success
+  ) {
+    console.error(
+      "IMAGEKIT: error obteniendo autenticación:",
+      {
+        status: authResponse.status,
+        data: authData,
+      }
+    );
+
+    throw new Error(
+      authData?.reason ||
+      "imagekit_auth_failed"
+    );
+  }
+
+  const formData = new FormData();
+
+  formData.append(
+    "file",
+    file
+  );
+
+  formData.append(
+    "fileName",
+    sanitizeImageFileName(file.name)
+  );
+
+  formData.append(
+    "publicKey",
+    authData.publicKey
+  );
+
+  formData.append(
+    "signature",
+    authData.signature
+  );
+
+  formData.append(
+    "expire",
+    String(authData.expire)
+  );
+
+  formData.append(
+    "token",
+    authData.token
+  );
+
+  formData.append(
+    "useUniqueFileName",
+    "true"
+  );
+
+  /*
+   * Keep media grouped by company/conversation.
+   * The folder is only organizational; the URL returned
+   * by ImageKit remains the source used later by Meta.
+   */
+
+  const companyId =
+    conversation?.company?.id ||
+    "unknown-company";
+
+  const conversationId =
+    conversation?.id ||
+    "unknown-conversation";
+
+  formData.append(
+    "folder",
+    `/pulse-inbox/${companyId}/conversations/${conversationId}`
+  );
+
+  const uploadResponse =
+    await fetch(
+      IMAGEKIT_UPLOAD_ENDPOINT,
+      {
+        method: "POST",
+        body: formData,
+      }
+    );
+
+  let uploadData = null;
+
+  try {
+    uploadData =
+      await uploadResponse.json();
+  } catch {
+    uploadData = null;
+  }
+
+  if (
+    !uploadResponse.ok ||
+    !uploadData?.url
+  ) {
+    console.error(
+      "IMAGEKIT: error subiendo archivo:",
+      {
+        status: uploadResponse.status,
+        data: uploadData,
+      }
+    );
+
+    throw new Error(
+      uploadData?.message ||
+      uploadData?.error?.message ||
+      "imagekit_upload_failed"
+    );
+  }
+
+  return uploadData;
+}
+
 
 /* =========================================================
    QUICK REPLIES
@@ -1291,6 +1473,24 @@ export function Chat(
         }
       />
 
+      <input
+        type="file"
+        class="chat-image-input"
+        accept="image/*"
+        hidden
+        ${
+          !canReply
+            ? "disabled"
+            : ""
+        }
+      />
+
+      <div
+        class="chat-upload-status"
+        aria-live="polite"
+        hidden
+      ></div>
+
 
       <div class="chat-actions">
 
@@ -1325,7 +1525,7 @@ export function Chat(
 
         <button
           type="button"
-          class="chat-action"
+          class="chat-action chat-image-button"
           aria-label="Imagen"
           ${
             !canReply
@@ -1392,6 +1592,21 @@ export function Chat(
   const input =
     chat.querySelector(
       ".chat-input"
+    );
+
+  const imageButton =
+    chat.querySelector(
+      ".chat-image-button"
+    );
+
+  const imageInput =
+    chat.querySelector(
+      ".chat-image-input"
+    );
+
+  const uploadStatus =
+    chat.querySelector(
+      ".chat-upload-status"
     );
 
 
@@ -2350,6 +2565,191 @@ export function Chat(
 
       }
     );
+
+
+  /* =======================================================
+     IMAGE UPLOAD
+  ======================================================= */
+
+  function setImageUploadStatus(
+    message = "",
+    state = ""
+  ) {
+    if (!uploadStatus) {
+      return;
+    }
+
+    uploadStatus.hidden =
+      !message;
+
+    uploadStatus.className =
+      `chat-upload-status${state ? ` is-${state}` : ""}`;
+
+    uploadStatus.textContent =
+      message;
+  }
+
+
+  function renderUploadedImagePreview(
+    uploadData,
+    file
+  ) {
+    if (!uploadStatus) {
+      return;
+    }
+
+    const url =
+      getSafeAttachmentUrl(
+        uploadData?.url
+      );
+
+    if (!url) {
+      setImageUploadStatus(
+        "La imagen se subió, pero no se recibió una URL válida.",
+        "error"
+      );
+
+      return;
+    }
+
+    uploadStatus.hidden = false;
+    uploadStatus.className =
+      "chat-upload-status is-success";
+
+    uploadStatus.innerHTML = `
+      <div class="chat-upload-preview">
+        <img
+          src="${escapeHtml(url)}"
+          alt="${escapeHtml(file.name)}"
+          loading="lazy"
+          referrerpolicy="no-referrer"
+        />
+
+        <div class="chat-upload-preview-info">
+          <strong>
+            Imagen subida
+          </strong>
+
+          <span>
+            ${escapeHtml(file.name)}
+          </span>
+
+          <small>
+            Lista para la siguiente fase de envío.
+          </small>
+        </div>
+      </div>
+    `;
+  }
+
+
+  if (
+    imageButton &&
+    imageInput &&
+    canReply
+  ) {
+    imageButton.addEventListener(
+      "click",
+      () => {
+        imageInput.click();
+      }
+    );
+
+    imageInput.addEventListener(
+      "change",
+      async () => {
+        const file =
+          imageInput.files?.[0];
+
+        if (!file) {
+          return;
+        }
+
+        try {
+          if (
+            !file.type.startsWith("image/")
+          ) {
+            throw new Error(
+              "invalid_image_type"
+            );
+          }
+
+          if (
+            file.size >
+            IMAGEKIT_MAX_IMAGE_SIZE
+          ) {
+            throw new Error(
+              "image_too_large"
+            );
+          }
+
+          setImageUploadStatus(
+            "Subiendo imagen...",
+            "loading"
+          );
+
+          const uploadData =
+            await uploadImageToImageKit(
+              file,
+              conversation
+            );
+
+          console.log(
+            "IMAGEKIT: imagen subida correctamente:",
+            {
+              fileId:
+                uploadData.fileId,
+              filePath:
+                uploadData.filePath,
+              url:
+                uploadData.url,
+              fileType:
+                uploadData.fileType,
+              size:
+                uploadData.size,
+            }
+          );
+
+          renderUploadedImagePreview(
+            uploadData,
+            file
+          );
+
+        } catch (error) {
+          console.error(
+            "IMAGEKIT: error subiendo imagen:",
+            error
+          );
+
+          const errorMessages = {
+            invalid_image_type:
+              "Selecciona una imagen válida.",
+            image_too_large:
+              "La imagen supera el límite de 25 MB.",
+            user_not_authenticated:
+              "Tu sesión no está disponible. Vuelve a iniciar sesión.",
+            imagekit_auth_failed:
+              "No se pudo autenticar la subida.",
+            imagekit_upload_failed:
+              "No se pudo subir la imagen a ImageKit.",
+          };
+
+          setImageUploadStatus(
+            errorMessages[error.message] ||
+              "No se pudo subir la imagen.",
+            "error"
+          );
+
+        } finally {
+          /*
+           * Reset the input so selecting the same image again
+           * still triggers the change event.
+           */
+          imageInput.value = "";
+        }
+      }
+    );
+  }
 
 
   /* =======================================================
